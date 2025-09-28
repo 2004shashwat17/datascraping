@@ -1,0 +1,76 @@
+# Core FastAPI and web framework dependencies
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+gunicorn==21.2.0
+python-multipart==0.0.6
+
+# MongoDB async driver and ODM
+motor==3.3.2
+beanie==1.23.6
+pymongo==4.6.1
+
+# Data validation and settings
+pydantic==2.5.0
+pydantic-settings==2.1.0
+
+# Async HTTP and monitoring (lightweight)
+httpx==0.25.2
+python-multipart==0.0.6
+
+# HTTP clients and API integrations
+aiohttp==3.9.1
+requests==2.31.0
+feedparser==6.0.10
+
+# Selenium Browser Automation (UNLIMITED SOCIAL MEDIA ACCESS!)
+selenium==4.15.2
+selenium-stealth==1.0.6
+webdriver-manager==4.0.1
+
+# Chrome WebDriver for browser automation
+chromedriver-binary==119.0.5945.79.0
+
+# Security and authentication
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.1.2
+
+# Configuration and environment
+python-dotenv==1.0.0
+pyyaml==6.0.1
+
+# Date and time handling
+python-dateutil==2.8.2
+pytz==2023.3
+
+# Data serialization and utilities
+orjson==3.9.10
+email-validator==2.1.0
+phonenumbers==8.13.27
+
+# Testing dependencies
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+pytest-mock==3.12.0
+httpx==0.25.2
+factory-boy==3.3.0
+
+# Development tools
+black==23.11.0
+flake8==6.1.0
+isort==5.12.0
+mypy==1.7.1
+pre-commit==3.6.0
+
+# Logging and monitoring
+structlog==23.2.0
+rich==13.7.0
+
+# Performance and caching
+aiocache==0.12.2
+cachetools==5.3.2
+
+# Network and security
+cryptography==41.0.7
+urllib3==2.1.0
