@@ -4,6 +4,24 @@ OAuth service for social media platform authentication
 import httpx
 import secrets
 import base64
+import asyncio
+import os
+from typing import Dict, Optional, Tuple
+from datetime import datetime, timedelta
+from urllib.parse import urlencode, parse_qs
+
+from app.core.config import get_settings
+from app.core.oauth_config import oauth_settings
+from app.core.mongodb import get_database
+from app.models.social_auth_models import SocialAccount, OAuthState, PlatformType
+from app.core.oauth_config import PLATFORM_CONFIGS
+from app.services import oauth_data_collector
+import logging
+
+logger = logging.getLogger(__name__)
+import httpx
+import secrets
+import base64
 import os
 from urllib.parse import urlencode, parse_qs
 from typing import Dict, Optional, Tuple
@@ -22,7 +40,12 @@ class OAuthService:
     
     async def get_authorization_url(self, platform: str, user_id: str) -> Tuple[str, str]:
         """Generate OAuth authorization URL for a platform"""
-        if platform not in PLATFORM_CONFIGS:
+        # Handle Instagram through Facebook
+        actual_platform = platform
+        if platform == "instagram":
+            actual_platform = "facebook"
+        
+        if actual_platform not in PLATFORM_CONFIGS:
             raise ValueError(f"Unsupported platform: {platform}")
         
         # Check if we're in test mode
@@ -33,16 +56,14 @@ class OAuthService:
             mock_url = f"http://localhost:3000/oauth-mock/{platform}?state={state}"
             return mock_url, state
         
-        config = PLATFORM_CONFIGS[platform]
+        config = PLATFORM_CONFIGS[actual_platform]
         state = secrets.token_urlsafe(32)
         
         # Store state for security verification
         await self._store_oauth_state(state, user_id, platform)
         
-        # Platform-specific client ID retrieval
         client_id_map = {
             "facebook": oauth_settings.FACEBOOK_CLIENT_ID,
-            "instagram": oauth_settings.INSTAGRAM_CLIENT_ID,
             "reddit": oauth_settings.REDDIT_CLIENT_ID,
             "google": oauth_settings.GOOGLE_CLIENT_ID,
             "twitter": oauth_settings.TWITTER_CLIENT_ID,
@@ -50,7 +71,6 @@ class OAuthService:
         
         redirect_uri_map = {
             "facebook": oauth_settings.FACEBOOK_REDIRECT_URI,
-            "instagram": oauth_settings.INSTAGRAM_REDIRECT_URI,
             "reddit": oauth_settings.REDDIT_REDIRECT_URI,
             "google": oauth_settings.GOOGLE_REDIRECT_URI,
             "twitter": oauth_settings.TWITTER_REDIRECT_URI,
@@ -95,6 +115,9 @@ class OAuthService:
         
         user_id = stored_data["user_id"]
         
+        # Determine actual platform for API calls (Instagram routes through Facebook)
+        actual_platform = "facebook" if platform == "instagram" else platform
+        
         try:
             # Check if this is a test code
             if code.startswith("test_code_"):
@@ -117,10 +140,10 @@ class OAuthService:
                 }
             else:
                 # Exchange code for access token
-                token_data = await self._exchange_code_for_token(platform, code)
+                token_data = await self._exchange_code_for_token(actual_platform, code)
                 
                 # Get user profile
-                profile_data = await self._get_user_profile(platform, token_data["access_token"])
+                profile_data = await self._get_user_profile(actual_platform, token_data["access_token"])
             
             # Save social account
             social_account = await self._save_social_account(
@@ -155,7 +178,6 @@ class OAuthService:
         
         client_secret_map = {
             "facebook": oauth_settings.FACEBOOK_CLIENT_SECRET,
-            "instagram": oauth_settings.INSTAGRAM_CLIENT_SECRET,
             "reddit": oauth_settings.REDDIT_CLIENT_SECRET,
             "google": oauth_settings.GOOGLE_CLIENT_SECRET,
             "twitter": oauth_settings.TWITTER_CLIENT_SECRET,
@@ -163,7 +185,6 @@ class OAuthService:
         
         client_id_map = {
             "facebook": oauth_settings.FACEBOOK_CLIENT_ID,
-            "instagram": oauth_settings.INSTAGRAM_CLIENT_ID,
             "reddit": oauth_settings.REDDIT_CLIENT_ID,
             "google": oauth_settings.GOOGLE_CLIENT_ID,
             "twitter": oauth_settings.TWITTER_CLIENT_ID,
@@ -171,7 +192,6 @@ class OAuthService:
         
         redirect_uri_map = {
             "facebook": oauth_settings.FACEBOOK_REDIRECT_URI,
-            "instagram": oauth_settings.INSTAGRAM_REDIRECT_URI,
             "reddit": oauth_settings.REDDIT_REDIRECT_URI,
             "google": oauth_settings.GOOGLE_REDIRECT_URI,
             "twitter": oauth_settings.TWITTER_REDIRECT_URI,
@@ -226,7 +246,7 @@ class OAuthService:
         # Platform-specific profile endpoints
         profile_endpoints = {
             "facebook": "/me?fields=id,name,email,picture.width(200).height(200)",
-            "instagram": "/me?fields=id,username,account_type,media_count",
+            "instagram": "/me?fields=id,name,email,picture.width(200).height(200)",  # Same as Facebook for now
             "reddit": "/api/v1/me",
             "google": "/channels?part=snippet&mine=true",
             "twitter": "/users/me?user.fields=id,username,name,profile_image_url,public_metrics"
@@ -259,10 +279,11 @@ class OAuthService:
             },
             "instagram": lambda d: {
                 "user_id": d["id"],
-                "username": d["username"],
-                "display_name": d["username"],
-                "profile_url": f"https://instagram.com/{d['username']}",
-                "profile_picture": None
+                "username": d.get("name", ""),
+                "display_name": d.get("name"),
+                "email": d.get("email"),
+                "profile_url": f"https://instagram.com/{d.get('username', d['id'])}",
+                "profile_picture": d.get("picture", {}).get("data", {}).get("url")
             },
             "reddit": lambda d: {
                 "user_id": d["id"],
@@ -385,7 +406,7 @@ class OAuthService:
         config = PLATFORM_CONFIGS[platform]
         
         # Platform-specific refresh logic
-        if platform in ["facebook", "instagram", "google"]:
+        if platform in ["facebook", "google"]:
             try:
                 response = await self.http_client.post(
                     config["token_url"],

@@ -30,6 +30,7 @@ import {
   Dataset,
   Security,
   Logout,
+  Warning,
 } from '@mui/icons-material';
 import { useAuth } from '../../contexts/AuthContext';
 import apiClient from '../../services/apiClient';
@@ -44,6 +45,7 @@ const DataCollectionStatus: React.FC<DataCollectionStatusProps> = () => {
   const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
   const [collectionResults, setCollectionResults] = useState<any>(null);
   const [isCollecting, setIsCollecting] = useState(false);
+  const [warnings, setWarnings] = useState<any[]>([]);
 
   // Pulse animation keyframe
   const pulse = keyframes`
@@ -77,10 +79,17 @@ const DataCollectionStatus: React.FC<DataCollectionStatusProps> = () => {
       setIsCollecting(true);
       setCollectingData(true);
       setProgress(0);
+      setWarnings([]);
       
       // Start data collection
       const response = await apiClient.triggerDataCollection();
       console.log('Data collection started:', response);
+      
+      // Store results and warnings
+      setCollectionResults(response);
+      if (response.warnings) {
+        setWarnings(response.warnings);
+      }
       
       // Progress will be handled by useEffect
       
@@ -278,6 +287,29 @@ const DataCollectionStatus: React.FC<DataCollectionStatusProps> = () => {
           </Card>
           </Box>
         </Box>
+
+        {/* Data Collection Warnings */}
+        {warnings.length > 0 && (
+          <Box>
+            {warnings.map((warning, index) => (
+              <Alert 
+                key={index}
+                severity="warning" 
+                sx={{ mb: 2 }}
+                icon={<Warning />}
+              >
+                <Typography variant="body1">
+                  <strong>{warning.platform.charAt(0).toUpperCase() + warning.platform.slice(1)} Data Collection Limited:</strong> {warning.message}
+                </Typography>
+                {warning.recommendation && (
+                  <Typography variant="body2" sx={{ mt: 1 }}>
+                    <strong>Recommendation:</strong> {warning.recommendation}
+                  </Typography>
+                )}
+              </Alert>
+            ))}
+          </Box>
+        )}
 
         {/* Collection Metrics */}
         <Box>

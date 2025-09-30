@@ -33,47 +33,67 @@ mongodb = MongoDB()
 
 async def connect_to_mongo():
     """Create database connection with fallback options"""
-    connection_attempts = [
-        # Attempt 1: Standard Atlas connection with TLS
-        {
-            "url": settings.database_url,
-            "options": {
-                "serverSelectionTimeoutMS": 10000,
-                "connectTimeoutMS": 10000,
-                "socketTimeoutMS": 10000,
-                "maxPoolSize": 10,
-                "minPoolSize": 1,
-                "tls": True,
-                "tlsAllowInvalidCertificates": False,
-                "retryWrites": True
+    
+    # Check if using local MongoDB
+    is_local = "localhost" in settings.database_url or "127.0.0.1" in settings.database_url
+    
+    if is_local:
+        # For local connections, use simple connection without TLS attempts
+        connection_attempts = [
+            {
+                "url": settings.database_url,
+                "options": {
+                    "serverSelectionTimeoutMS": 5000,
+                    "connectTimeoutMS": 5000,
+                    "socketTimeoutMS": 5000,
+                    "maxPoolSize": 10,
+                    "minPoolSize": 1
+                }
             }
-        },
-        # Attempt 2: Atlas connection with relaxed SSL
-        {
-            "url": settings.database_url,
-            "options": {
-                "serverSelectionTimeoutMS": 15000,
-                "connectTimeoutMS": 15000,
-                "socketTimeoutMS": 15000,
-                "maxPoolSize": 5,
-                "minPoolSize": 1,
-                "tls": True,
-                "tlsAllowInvalidCertificates": True,  # More permissive for SSL issues
-                "retryWrites": True
+        ]
+    else:
+        # For Atlas/remote connections, try with TLS first
+        connection_attempts = [
+            # Attempt 1: Standard Atlas connection with TLS
+            {
+                "url": settings.database_url,
+                "options": {
+                    "serverSelectionTimeoutMS": 10000,
+                    "connectTimeoutMS": 10000,
+                    "socketTimeoutMS": 10000,
+                    "maxPoolSize": 10,
+                    "minPoolSize": 1,
+                    "tls": True,
+                    "tlsAllowInvalidCertificates": False,
+                    "retryWrites": True
+                }
+            },
+            # Attempt 2: Atlas connection with relaxed SSL
+            {
+                "url": settings.database_url,
+                "options": {
+                    "serverSelectionTimeoutMS": 15000,
+                    "connectTimeoutMS": 15000,
+                    "socketTimeoutMS": 15000,
+                    "maxPoolSize": 5,
+                    "minPoolSize": 1,
+                    "tls": True,
+                    "tlsAllowInvalidCertificates": True,  # More permissive for SSL issues
+                    "retryWrites": True
+                }
+            },
+            # Attempt 3: Local MongoDB fallback
+            {
+                "url": "mongodb://localhost:27017/osint_platform",
+                "options": {
+                    "serverSelectionTimeoutMS": 5000,
+                    "connectTimeoutMS": 5000,
+                    "socketTimeoutMS": 5000,
+                    "maxPoolSize": 5,
+                    "minPoolSize": 1
+                }
             }
-        },
-        # Attempt 3: Local MongoDB fallback
-        {
-            "url": "mongodb://localhost:27017/osint_platform",
-            "options": {
-                "serverSelectionTimeoutMS": 5000,
-                "connectTimeoutMS": 5000,
-                "socketTimeoutMS": 5000,
-                "maxPoolSize": 5,
-                "minPoolSize": 1
-            }
-        }
-    ]
+        ]
     
     for i, attempt in enumerate(connection_attempts):
         try:

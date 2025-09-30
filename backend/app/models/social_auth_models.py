@@ -9,7 +9,6 @@ from enum import Enum
 
 class PlatformType(str, Enum):
     FACEBOOK = "facebook"
-    INSTAGRAM = "instagram"
     REDDIT = "reddit"
     YOUTUBE = "youtube"
     TWITTER = "twitter"
@@ -57,6 +56,26 @@ class SocialAccount(Document):
             ("user_id", "platform"),
         ]
 
+class PostComment(BaseModel):
+    """Individual comment on a post"""
+    comment_id: str = Field(..., description="Unique comment ID on platform")
+    author_id: str = Field(..., description="Comment author's platform ID")
+    author_username: Optional[str] = None
+    author_display_name: Optional[str] = None
+    content: str
+    created_at: datetime
+    likes_count: int = 0
+    replies_count: int = 0
+    raw_data: Dict[str, Any] = Field(default_factory=dict)
+
+class PostLike(BaseModel):
+    """Individual like on a post"""
+    user_id: str = Field(..., description="Liking user's platform ID")
+    username: Optional[str] = None
+    display_name: Optional[str] = None
+    liked_at: datetime
+    raw_data: Dict[str, Any] = Field(default_factory=dict)
+
 class CollectedPost(Document):
     """Posts collected from social media platforms"""
     user_id: str = Field(..., description="OSINT platform user ID")
@@ -84,6 +103,10 @@ class CollectedPost(Document):
     comments_count: Optional[int] = 0
     shares_count: Optional[int] = 0
     views_count: Optional[int] = 0
+    
+    # Individual engagement details
+    likes: List[PostLike] = Field(default_factory=list)
+    comments: List[PostComment] = Field(default_factory=list)
     
     # Privacy and visibility
     is_public: bool = Field(default=True)
@@ -223,4 +246,37 @@ class OAuthState(Document):
         indexes = [
             "state",
             "expires_at",
+        ]
+
+class SearchHistory(Document):
+    """User's search history and interactions on social platforms"""
+    user_id: str = Field(..., description="OSINT platform user ID")
+    social_account_id: str = Field(..., description="Reference to SocialAccount")
+    platform: PlatformType
+    
+    # Search details
+    search_query: str = Field(..., description="The search query performed")
+    search_type: str = Field(default="general")  # general, hashtag, user, location, etc.
+    
+    # Interaction details (for tracking interactions on search results)
+    interaction_type: Optional[str] = None  # like, comment, share, view, etc.
+    target_content_id: Optional[str] = None  # ID of the content interacted with
+    target_content_type: Optional[str] = None  # post, comment, profile, etc.
+    
+    # Metadata
+    searched_at: datetime = Field(default_factory=datetime.utcnow)
+    collected_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    # Additional data
+    results_count: Optional[int] = None  # Number of results returned
+    raw_data: Dict[str, Any] = Field(default_factory=dict)
+    
+    class Settings:
+        name = "search_histories"
+        indexes = [
+            "user_id",
+            "platform",
+            "social_account_id",
+            "searched_at",
+            ("search_query", "platform"),
         ]

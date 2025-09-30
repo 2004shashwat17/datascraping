@@ -70,7 +70,7 @@ class Settings(BaseSettings):
     # Database settings  
     database_url: str = Field(..., description="MongoDB connection URL")
     mongodb_url: Optional[str] = Field(None, description="MongoDB connection URL (alias)")
-    db_name: str = Field("osint_platform", description="Database name")
+    db_name: str = Field("dataplatform", description="Database name")
     
     # Security settings
     SECRET_KEY: str = Field("dev-secret-key-change-in-production", description="JWT secret key")
@@ -78,6 +78,9 @@ class Settings(BaseSettings):
     
     # YouTube API settings
     YOUTUBE_API_KEY: str = Field("", description="YouTube API key for data collection")
+    
+    # Apify API settings
+    apify_api_token: str = Field("", description="Apify API token for web scraping")
     
     # Additional service configurations can be added here as needed
     

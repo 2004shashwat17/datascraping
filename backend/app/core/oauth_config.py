@@ -5,15 +5,10 @@ from pydantic_settings import BaseSettings
 from typing import Dict, List
 
 class OAuthSettings(BaseSettings):
-    # Facebook/Instagram (Meta)
+    # Facebook/Instagram (Meta) - Instagram access through Facebook Graph API
     FACEBOOK_CLIENT_ID: str = ""
     FACEBOOK_CLIENT_SECRET: str = ""
     FACEBOOK_REDIRECT_URI: str = "http://localhost:8001/api/v1/oauth/facebook/callback"
-    
-    # Instagram (uses Facebook API)
-    INSTAGRAM_CLIENT_ID: str = ""
-    INSTAGRAM_CLIENT_SECRET: str = ""
-    INSTAGRAM_REDIRECT_URI: str = "http://localhost:8001/api/v1/oauth/instagram/callback"
     
     # Reddit
     REDDIT_CLIENT_ID: str = ""
@@ -42,13 +37,7 @@ PLATFORM_CONFIGS = {
         "auth_url": "https://www.facebook.com/v18.0/dialog/oauth",
         "token_url": "https://graph.facebook.com/v18.0/oauth/access_token",
         "api_base": "https://graph.facebook.com/v18.0",
-        "scopes": ["public_profile", "email", "user_posts", "user_friends", "pages_read_engagement"]
-    },
-    "instagram": {
-        "auth_url": "https://api.instagram.com/oauth/authorize",
-        "token_url": "https://api.instagram.com/oauth/access_token",
-        "api_base": "https://graph.instagram.com",
-        "scopes": ["user_profile", "user_media"]
+        "scopes": ["public_profile", "email", "pages_read_engagement", "pages_show_list", "instagram_basic", "instagram_content_publish", "pages_read_engagement"]
     },
     "reddit": {
         "auth_url": "https://www.reddit.com/api/v1/authorize",
@@ -80,12 +69,10 @@ PLATFORM_DATA_TYPES = {
         "friends": "Friends list (limited by API)",
         "likes": "Liked pages and posts",
         "photos": "Photos and albums",
-        "events": "Events user is attending"
-    },
-    "instagram": {
-        "posts": "User's photos and videos",
-        "stories": "Story highlights",
-        "media": "All media content"
+        "events": "Events user is attending",
+        "instagram_posts": "Instagram posts and stories",
+        "instagram_media": "Instagram photos and videos",
+        "instagram_insights": "Instagram account insights"
     },
     "reddit": {
         "posts": "Submitted posts and comments",

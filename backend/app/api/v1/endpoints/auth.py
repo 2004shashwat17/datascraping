@@ -12,8 +12,10 @@ from passlib.context import CryptContext
 from pydantic import BaseModel
 
 from app.models.mongo_models import User, PlatformEnum
+from app.models.social_auth_models import SocialAccount
 from app.core.config import get_settings
 from app.services.no_api_collector import no_api_collector
+from app.services.oauth_data_collector import oauth_data_collector
 
 settings = get_settings()
 
@@ -285,6 +287,12 @@ async def register(user_data: UserCreate):
     )
 
 
+@router.options("/login")
+async def options_login():
+    """Handle CORS preflight for login endpoint"""
+    return {"message": "OK"}
+
+
 @router.post("/login", response_model=Token)
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     """Login user and return access token."""
@@ -362,15 +370,26 @@ async def update_permissions(
     
     await current_user.save()
     
-    # Trigger HYBRID data collection if platforms are enabled
+    # Trigger data collection if platforms are enabled and accounts are connected
     collection_result = None
     if enabled_platforms:
         try:
-            collection_result = await no_api_collector.collect_data_for_user(current_user)
+            # Check if user has connected social accounts
+            connected_accounts = await SocialAccount.find(
+                SocialAccount.user_id == str(current_user.id),
+                SocialAccount.is_active == True
+            ).to_list()
+            
+            if connected_accounts:
+                # Use OAuth data collector for connected accounts
+                collection_result = await oauth_data_collector.collect_data_for_user(str(current_user.id))
+            else:
+                # No connected accounts, skip collection
+                collection_result = {"message": "No connected social accounts found. Data collection requires OAuth authentication."}
         except Exception as e:
             # Log error but don't fail the permission update
-            print(f"Hybrid collection error: {e}")
-            collection_result = {"error": "Hybrid collection failed", "message": str(e)}
+            print(f"Data collection error: {e}")
+            collection_result = {"error": "Data collection failed", "message": str(e)}
     
     response = {
         "message": "Permissions updated successfully",
@@ -393,7 +412,19 @@ async def trigger_data_collection(current_user: User = Depends(get_current_user)
         )
     
     try:
-        result = await no_api_collector.collect_data_for_user(current_user)
+        # Check if user has connected social accounts
+        connected_accounts = await SocialAccount.find(
+            SocialAccount.user_id == str(current_user.id),
+            SocialAccount.is_active == True
+        ).to_list()
+        
+        if not connected_accounts:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No connected social accounts found. Please connect your social media accounts first."
+            )
+        
+        result = await oauth_data_collector.collect_data_for_user(str(current_user.id))
         return result
     except Exception as e:
         raise HTTPException(

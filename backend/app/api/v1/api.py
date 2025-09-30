@@ -3,7 +3,7 @@ API v1 router module that aggregates all API endpoints.
 """
 
 from fastapi import APIRouter
-from app.api.v1.endpoints import posts_mongo, auth, dashboard, selenium_social_auth, oauth
+from app.api.v1.endpoints import posts_mongo, auth, dashboard, oauth, credentials
 
 api_router = APIRouter()
 
@@ -27,13 +27,14 @@ api_router.include_router(
 )
 
 api_router.include_router(
-    selenium_social_auth.router,
-    tags=["Social Media Authentication - Selenium"]
+    oauth.router,
+    tags=["OAuth Authentication"]
 )
 
 api_router.include_router(
-    oauth.router,
-    tags=["OAuth Authentication"]
+    credentials.router,
+    prefix="/collect",
+    tags=["Credential-based Collection"]
 )
 
 # TODO: Add other endpoint routers when implemented:

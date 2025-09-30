@@ -74,3 +74,9 @@ cachetools==5.3.2
 # Network and security
 cryptography==41.0.7
 urllib3==2.1.0
+
+# Instagram scraping
+instaloader==4.10.1
+
+# Apify web scraping
+apify-client==1.6.1

@@ -75,8 +75,11 @@ export interface DataCollectionResponse {
   message?: string;
 }
 
-export interface SyncResponse {
-  success: boolean;
-  sync_types: string[];
-  message?: string;
+export interface OAuthAccountsResponse {
+  accounts: SocialAccount[];
+}
+
+export interface OAuthConnectResponse {
+  auth_url: string;
+  state: string;
 }
