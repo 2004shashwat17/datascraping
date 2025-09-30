@@ -57,6 +57,71 @@ class CredentialService:
                 "target": target_username
             }
 
+    async def collect_comprehensive_instagram_data(self, email: str, password: str, max_items: int = 50) -> Dict[str, int]:
+        """Collect comprehensive Instagram data for the logged-in user"""
+        logger.info(f"Starting comprehensive Instagram collection for {email} with max_items={max_items}")
+        try:
+            logger.info(f"Starting comprehensive Instagram collection for {email}")
+            collector = InstagramInstaloaderCollector(
+                username=email,
+                password=password,
+                session_path=f"data/browser_sessions/instagram_{email.replace('@', '_').replace('.', '_')}",
+                request_delay=2.0  # Slower to avoid detection
+            )
+
+            total_collected = 0
+
+            # 1. Collect feed posts
+            logger.info("Collecting feed posts...")
+            feed_posts = collector.collect_feed_posts(max_posts=max_items)
+            feed_saved = await collector.save_posts_to_db(feed_posts)
+            total_collected += feed_saved
+            logger.info(f"Saved {feed_saved} feed posts")
+
+            # 2. Collect user's own posts
+            logger.info("Collecting own profile posts...")
+            own_posts = collector.collect_posts_from_profile(email, max_posts=max_items)
+            own_saved = await collector.save_posts_to_db(own_posts)
+            total_collected += own_saved
+            logger.info(f"Saved {own_saved} own posts")
+
+            # 3. Collect followers
+            logger.info("Collecting followers...")
+            followers = collector.collect_followers(email, max_followers=max_items)
+            followers_saved = await collector.save_relationships_to_db(followers)
+            logger.info(f"Saved {followers_saved} followers")
+
+            # 4. Collect following
+            logger.info("Collecting following...")
+            following = collector.collect_following(email, max_following=max_items)
+            following_saved = await collector.save_relationships_to_db(following)
+            logger.info(f"Saved {following_saved} following")
+
+            logger.info(f"Comprehensive collection completed: {total_collected} posts, {followers_saved} followers, {following_saved} following")
+
+            return {
+                "success": True,
+                "collected_posts": total_collected,
+                "collected_followers": followers_saved,
+                "collected_following": following_saved,
+                "platform": "instagram",
+                "target": email
+            }
+
+        except Exception as e:
+            logger.error(f"Error in comprehensive Instagram collection: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return {
+                "success": False,
+                "error": str(e),
+                "collected_posts": 0,
+                "collected_followers": 0,
+                "collected_following": 0,
+                "platform": "instagram",
+                "target": email
+            }
+
     async def collect_with_apify(self, platform: str, target: str, api_token: Optional[str] = None, max_posts: int = 10) -> Dict[str, int]:
         """Collect data using Apify for platforms that support it"""
         try:
@@ -97,6 +162,8 @@ class CredentialService:
 
     async def collect_data(self, platform: str, credentials: Dict[str, str], target: str, max_posts: int = 10) -> Dict[str, int]:
         """Main method to collect data based on platform and credentials"""
+        logger.info(f"collect_data called: platform={platform}, target='{target}', max_posts={max_posts}")
+        
         if platform == "instagram":
             if "email" not in credentials or "password" not in credentials:
                 return {
@@ -107,12 +174,23 @@ class CredentialService:
                     "target": target
                 }
 
-            return await self.collect_instagram_data(
-                email=credentials["email"],
-                password=credentials["password"],
-                target_username=target,
-                max_posts=max_posts
-            )
+            # If target is empty, "self", or same as email, do comprehensive collection
+            if not target or target.lower() in ["self", "me", credentials["email"].lower()]:
+                logger.info(f"Using comprehensive collection for Instagram (target='{target}')")
+                return await self.collect_comprehensive_instagram_data(
+                    email=credentials["email"],
+                    password=credentials["password"],
+                    max_items=max_posts
+                )
+            else:
+                # Collect from specific target
+                logger.info(f"Using regular collection for Instagram target='{target}'")
+                return await self.collect_instagram_data(
+                    email=credentials["email"],
+                    password=credentials["password"],
+                    target_username=target,
+                    max_posts=max_posts
+                )
 
         elif platform in ["twitter", "youtube"]:
             # Use Apify for these platforms

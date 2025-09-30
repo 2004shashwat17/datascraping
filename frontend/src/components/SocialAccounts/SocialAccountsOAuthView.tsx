@@ -19,6 +19,8 @@ import {
   InputLabel,
   Select,
   MenuItem,
+  FormControlLabel,
+  Checkbox,
 } from '@mui/material';
 import {
   Facebook,
@@ -43,6 +45,7 @@ const SocialAccountsOAuthView: React.FC = () => {
   const [accounts, setAccounts] = useState<SocialAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [connecting, setConnecting] = useState<string | null>(null);
   const [disconnecting, setDisconnecting] = useState<string | null>(null);
   const [searchParams] = useSearchParams();
@@ -56,6 +59,7 @@ const SocialAccountsOAuthView: React.FC = () => {
     target: '',
     maxPosts: 10,
     apiToken: '',
+    collectOwnData: false, // New field for comprehensive collection
   });
 
   const platformIcons: Record<string, React.ReactElement> = {
@@ -68,7 +72,7 @@ const SocialAccountsOAuthView: React.FC = () => {
 
   const platformNames: Record<string, string> = {
     facebook: 'Facebook',
-    instagram: 'Instagram (Credential-based Scraping)',
+    instagram: 'Instagram (Credential-based Scraping - Feed, Posts, Followers, Following)',
     twitter: 'Twitter',
     youtube: 'YouTube',
     reddit: 'Reddit',
@@ -95,17 +99,47 @@ const SocialAccountsOAuthView: React.FC = () => {
     const errorParam = searchParams.get('error');
     const platform = searchParams.get('platform');
 
+    console.log('OAuth callback detected:', { success, error: errorParam, platform, currentPath: window.location.pathname });
+
     if (success === 'true' && platform) {
       // OAuth successful
+      console.log(`OAuth success for ${platform}, refreshing accounts...`);
       loadAccounts(); // Refresh accounts
+      setSuccessMessage(`${platform.charAt(0).toUpperCase() + platform.slice(1)} connected successfully!`);
+      // Clear success message after 5 seconds
+      setTimeout(() => setSuccessMessage(null), 5000);
       // Clear URL params
       window.history.replaceState({}, document.title, window.location.pathname);
+      console.log('URL params cleared, staying on social-accounts page');
     } else if (errorParam && platform) {
       // OAuth failed
+      console.log(`OAuth error for ${platform}: ${errorParam}`);
       setError('Failed to connect');
       window.history.replaceState({}, document.title, window.location.pathname);
     }
   }, [searchParams]);
+
+  // Also check for OAuth parameters on mount in case the useEffect doesn't trigger
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const success = urlParams.get('success');
+    const errorParam = urlParams.get('error');
+    const platform = urlParams.get('platform');
+
+    if (success === 'true' && platform) {
+      console.log('OAuth success detected on mount for', platform);
+      loadAccounts();
+      setSuccessMessage(`${platform.charAt(0).toUpperCase() + platform.slice(1)} connected successfully!`);
+      // Clear success message after 5 seconds
+      setTimeout(() => setSuccessMessage(null), 5000);
+      // Clear URL params
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (errorParam && platform) {
+      console.log('OAuth error detected on mount for', platform);
+      setError('Failed to connect');
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []); // Run only on mount
 
   const handleConnect = async (platform: string) => {
     try {
@@ -121,7 +155,9 @@ const SocialAccountsOAuthView: React.FC = () => {
       }
 
       // For other platforms, use OAuth
-      const response = await apiClient.get<OAuthConnectResponse>(`/oauth/connect/${platform}`);
+      // Map frontend platform names to backend API names
+      const apiPlatform = platform === 'youtube' ? 'google' : platform;
+      const response = await apiClient.get<OAuthConnectResponse>(`/oauth/connect/${apiPlatform}`);
       if (response.data.auth_url) {
         window.location.href = response.data.auth_url;
       }
@@ -138,7 +174,9 @@ const SocialAccountsOAuthView: React.FC = () => {
       setDisconnecting(platform);
       setError(null);
 
-      await apiClient.delete(`/oauth/disconnect/${platform}`);
+      // Map frontend platform names to backend API names
+      const apiPlatform = platform === 'youtube' ? 'google' : platform;
+      await apiClient.delete(`/oauth/disconnect/${apiPlatform}`);
       
       // Refresh accounts after disconnect
       await loadAccounts();
@@ -159,7 +197,7 @@ const SocialAccountsOAuthView: React.FC = () => {
         platform: selectedPlatform,
         email: credentials.email,
         password: credentials.password,
-        target: credentials.target,
+        target: credentials.collectOwnData ? null : credentials.target, // Send null for comprehensive collection
         max_posts: credentials.maxPosts,
         ...(credentials.apiToken && { api_token: credentials.apiToken }),
       };
@@ -176,6 +214,7 @@ const SocialAccountsOAuthView: React.FC = () => {
           target: '',
           maxPosts: 10,
           apiToken: '',
+          collectOwnData: false,
         });
         // Optionally refresh accounts or show success message
         loadAccounts();
@@ -198,6 +237,7 @@ const SocialAccountsOAuthView: React.FC = () => {
       target: '',
       maxPosts: 10,
       apiToken: '',
+      collectOwnData: false,
     });
   };
 
@@ -231,6 +271,12 @@ const SocialAccountsOAuthView: React.FC = () => {
       {error && (
         <Alert severity="error" sx={{ mb: 3 }}>
           {error}
+        </Alert>
+      )}
+
+      {successMessage && (
+        <Alert severity="success" sx={{ mb: 3 }}>
+          {successMessage}
         </Alert>
       )}
 
@@ -311,7 +357,7 @@ const SocialAccountsOAuthView: React.FC = () => {
 
       <Alert severity="info" sx={{ mt: 4 }}>
         <Typography variant="body2">
-          <strong>Note:</strong> Instagram uses credential-based scraping for comprehensive data collection.
+          <strong>Note:</strong> Instagram supports comprehensive data collection including your feed, posts, followers, and following.
           Other platforms use OAuth 2.0 for secure authentication. Your credentials are never stored on our servers.
         </Typography>
       </Alert>
@@ -319,7 +365,7 @@ const SocialAccountsOAuthView: React.FC = () => {
       {/* Credential Input Dialog */}
       <Dialog open={credentialDialogOpen} onClose={handleCredentialDialogClose} maxWidth="sm" fullWidth>
         <DialogTitle>
-          Connect to {platformNames[selectedPlatform] || selectedPlatform}
+          {credentials.collectOwnData ? 'Collect Your Instagram Data' : `Connect to ${platformNames[selectedPlatform] || selectedPlatform}`}
         </DialogTitle>
         <DialogContent>
           <Box sx={{ pt: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -339,22 +385,36 @@ const SocialAccountsOAuthView: React.FC = () => {
               fullWidth
               required
             />
+            {selectedPlatform === 'instagram' && (
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={credentials.collectOwnData}
+                    onChange={(e) => setCredentials({ ...credentials, collectOwnData: e.target.checked })}
+                  />
+                }
+                label="Collect my own comprehensive data (feed, posts, followers, following)"
+              />
+            )}
+            {!credentials.collectOwnData && (
+              <TextField
+                label="Target Username/Profile"
+                value={credentials.target}
+                onChange={(e) => setCredentials({ ...credentials, target: e.target.value })}
+                fullWidth
+                required={!credentials.collectOwnData}
+                helperText={credentials.collectOwnData ? "Not needed for own data collection" : "Enter the Instagram username to scrape data from"}
+                disabled={credentials.collectOwnData}
+              />
+            )}
             <TextField
-              label="Target Username/Profile"
-              value={credentials.target}
-              onChange={(e) => setCredentials({ ...credentials, target: e.target.value })}
-              fullWidth
-              required
-              helperText="Enter the Instagram username to scrape data from"
-            />
-            <TextField
-              label="Maximum Posts"
+              label="Maximum Items"
               type="number"
               value={credentials.maxPosts}
               onChange={(e) => setCredentials({ ...credentials, maxPosts: parseInt(e.target.value) || 10 })}
               fullWidth
               inputProps={{ min: 1, max: 100 }}
-              helperText="Maximum number of posts to collect (1-100)"
+              helperText={credentials.collectOwnData ? "Maximum posts/followers/following to collect (1-100)" : "Maximum number of posts to collect (1-100)"}
             />
             {selectedPlatform !== 'instagram' && (
               <TextField
@@ -372,10 +432,10 @@ const SocialAccountsOAuthView: React.FC = () => {
           <Button
             onClick={handleCredentialSubmit}
             variant="contained"
-            disabled={connecting === selectedPlatform || !credentials.email || !credentials.password || !credentials.target}
+            disabled={connecting === selectedPlatform || !credentials.email || !credentials.password || (!credentials.collectOwnData && !credentials.target)}
             startIcon={connecting === selectedPlatform ? <CircularProgress size={20} /> : <Login />}
           >
-            {connecting === selectedPlatform ? 'Connecting...' : 'Connect & Scrape'}
+            {connecting === selectedPlatform ? 'Connecting...' : credentials.collectOwnData ? 'Connect & Collect My Data' : 'Connect & Scrape'}
           </Button>
         </DialogActions>
       </Dialog>

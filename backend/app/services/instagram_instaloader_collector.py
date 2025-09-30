@@ -14,6 +14,7 @@ import logging
 from typing import List, Dict, Optional
 from datetime import datetime
 from pathlib import Path
+import time
 
 from app.models.mongo_models import SocialMediaPost, PlatformEnum
 from app.core.mongodb import get_mongo_db
@@ -32,7 +33,7 @@ class InstagramInstaloaderCollector:
     - Hashtag and mention extraction
     """
 
-    def __init__(self, username: str, password: str, session_path: Optional[str] = None):
+    def __init__(self, username: str, password: str, session_path: Optional[str] = None, request_delay: float = 1.0, proxy: Optional[str] = None):
         """
         Initialize the Instagram collector
 
@@ -40,11 +41,23 @@ class InstagramInstaloaderCollector:
             username: Instagram username for login
             password: Instagram password for login
             session_path: Path to save/load session file (optional)
+            request_delay: Delay in seconds between requests to avoid rate limiting
+            proxy: Proxy URL (e.g., 'http://proxy:port') to use for requests
         """
         self.username = username
         self.password = password
         self.session_path = session_path or "data/browser_sessions/instagram_session"
+        self.request_delay = request_delay
+        self.proxy = proxy
         self.loader = instaloader.Instaloader()
+
+        # Set proxy if provided
+        if self.proxy:
+            self.loader.context._session.proxies = {
+                'http': self.proxy,
+                'https': self.proxy
+            }
+            logger.info(f"Using proxy: {self.proxy}")
 
         # Create session directory if it doesn't exist
         Path(self.session_path).parent.mkdir(parents=True, exist_ok=True)
@@ -86,19 +99,26 @@ class InstagramInstaloaderCollector:
             except instaloader.exceptions.ConnectionException as e:
                 logger.error(f"❌ Connection error during login: {e}")
                 logger.error("💡 This might be due to network issues or Instagram rate limiting")
+                logger.error("💡 Try using a VPN or different network")
                 return False
             except KeyError as e:
                 logger.error(f"❌ Instagram login structure changed (CSRF token error): {e}")
                 logger.error("💡 Instagram frequently updates their login process")
-                logger.error("💡 Try again in a few minutes or use different credentials")
+                logger.error("💡 Try these solutions:")
+                logger.error("   1. Wait 1-2 hours and try again")
+                logger.error("   2. Use a different Instagram account")
+                logger.error("   3. Try logging in manually first, then use the same credentials")
+                logger.error("   4. Use a VPN to change your IP address")
                 return False
             except instaloader.exceptions.TwoFactorAuthRequiredException:
                 logger.error("❌ Two-factor authentication required - not supported by this collector")
                 logger.error("💡 Please disable 2FA temporarily or use an account without 2FA")
+                logger.error("💡 Alternatively, complete 2FA manually in browser and save session")
                 return False
             except Exception as e:
                 logger.error(f"❌ Unexpected login error: {type(e).__name__}: {e}")
                 logger.error("💡 This could be due to Instagram anti-bot measures")
+                logger.error("💡 Try waiting a few hours or using a different account")
                 return False
         except Exception as e:
             logger.error(f"❌ Session loading error: {type(e).__name__}: {e}")
@@ -153,6 +173,9 @@ class InstagramInstaloaderCollector:
 
                 posts_data.append(post_data)
 
+                # Add delay to avoid rate limiting
+                time.sleep(self.request_delay)
+
         except instaloader.exceptions.ProfileNotExistsException:
             logger.error(f"Profile {profile_username} does not exist")
         except Exception as e:
@@ -203,6 +226,9 @@ class InstagramInstaloaderCollector:
                 }
 
                 posts_data.append(post_data)
+
+                # Add delay to avoid rate limiting
+                time.sleep(self.request_delay)
 
         except Exception as e:
             logger.error(f"Error collecting posts from hashtag {hashtag}: {e}")
@@ -281,5 +307,187 @@ class InstagramInstaloaderCollector:
         # Save collected data to database
         saved_count = await self.save_posts_to_db(posts_data)
         logger.info(f"Collected and saved {saved_count} posts from {target_type} {target}")
+
+        return saved_count
+
+    def collect_feed_posts(self, max_posts: int = 10) -> List[Dict]:
+        """
+        Collect posts from the user's Instagram feed (timeline)
+
+        Args:
+            max_posts: Maximum number of posts to collect
+
+        Returns:
+            List of post dictionaries with metadata
+        """
+        posts_data = []
+
+        try:
+            # Get feed posts (what you'd see on the main page)
+            for post in self.loader.get_feed_posts():
+                if len(posts_data) >= max_posts:
+                    break
+
+                # Extract post data similar to profile posts
+                post_data = {
+                    "platform": PlatformEnum.INSTAGRAM,
+                    "post_id": post.shortcode,
+                    "author": post.owner_username,
+                    "author_username": post.owner_username,
+                    "content": post.caption or "",
+                    "url": f"https://www.instagram.com/p/{post.shortcode}/",
+                    "posted_at": post.date,
+                    "collected_at": datetime.utcnow(),
+                    "engagement_metrics": {
+                        "likes": post.likes,
+                        "comments": post.comments
+                    },
+                    "likes_count": post.likes,
+                    "comments_count": post.comments,
+                    "hashtags": post.caption_hashtags,
+                    "mentions": post.caption_mentions,
+                    "media_urls": [node.display_url for node in post.get_sidecar_nodes()] if post.typename == 'GraphSidecar' else [post.url] if post.url else [],
+                    "is_processed": False,
+                    "processing_errors": [],
+                    "source": "feed"  # Indicate this came from feed
+                }
+
+                posts_data.append(post_data)
+
+                # Add delay to avoid rate limiting
+                time.sleep(self.request_delay)
+
+        except Exception as e:
+            logger.error(f"Error collecting feed posts: {e}")
+
+        return posts_data
+
+    def collect_followers(self, profile_username: str, max_followers: int = 100) -> List[Dict]:
+        """
+        Collect followers from a specific Instagram profile
+
+        Args:
+            profile_username: Instagram username (without @)
+            max_followers: Maximum number of followers to collect
+
+        Returns:
+            List of follower dictionaries with basic profile info
+        """
+        followers_data = []
+
+        try:
+            profile = instaloader.Profile.from_username(self.loader.context, profile_username)
+
+            # Iterate through followers
+            for follower in profile.get_followers():
+                if len(followers_data) >= max_followers:
+                    break
+
+                follower_data = {
+                    "platform": PlatformEnum.INSTAGRAM,
+                    "relationship_type": "follower",
+                    "source_username": profile_username,
+                    "target_username": follower.username,
+                    "target_full_name": follower.full_name or follower.username,
+                    "target_profile_url": f"https://www.instagram.com/{follower.username}/",
+                    "is_private": follower.is_private,
+                    "is_verified": follower.is_verified,
+                    "collected_at": datetime.utcnow(),
+                }
+
+                followers_data.append(follower_data)
+
+                # Add delay to avoid rate limiting
+                time.sleep(self.request_delay)
+
+        except instaloader.exceptions.ProfileNotExistsException:
+            logger.error(f"Profile {profile_username} does not exist")
+        except Exception as e:
+            logger.error(f"Error collecting followers from {profile_username}: {e}")
+
+        return followers_data
+
+    def collect_following(self, profile_username: str, max_following: int = 100) -> List[Dict]:
+        """
+        Collect following (followees) from a specific Instagram profile
+
+        Args:
+            profile_username: Instagram username (without @)
+            max_following: Maximum number of following to collect
+
+        Returns:
+            List of following dictionaries with basic profile info
+        """
+        following_data = []
+
+        try:
+            profile = instaloader.Profile.from_username(self.loader.context, profile_username)
+
+            # Iterate through following
+            for followee in profile.get_followees():
+                if len(following_data) >= max_following:
+                    break
+
+                followee_data = {
+                    "platform": PlatformEnum.INSTAGRAM,
+                    "relationship_type": "following",
+                    "source_username": profile_username,
+                    "target_username": followee.username,
+                    "target_full_name": followee.full_name or followee.username,
+                    "target_profile_url": f"https://www.instagram.com/{followee.username}/",
+                    "is_private": followee.is_private,
+                    "is_verified": followee.is_verified,
+                    "collected_at": datetime.utcnow(),
+                }
+
+                following_data.append(followee_data)
+
+                # Add delay to avoid rate limiting
+                time.sleep(self.request_delay)
+
+        except instaloader.exceptions.ProfileNotExistsException:
+            logger.error(f"Profile {profile_username} does not exist")
+        except Exception as e:
+            logger.error(f"Error collecting following from {profile_username}: {e}")
+
+        return following_data
+
+    async def save_relationships_to_db(self, relationships_data: List[Dict]) -> int:
+        """
+        Save collected relationships to MongoDB
+
+        Args:
+            relationships_data: List of relationship dictionaries to save
+
+        Returns:
+            Number of relationships successfully saved
+        """
+        from app.core.mongodb import get_mongo_db
+
+        saved_count = 0
+        db = await get_mongo_db()
+        collection = db["social_media_relationships"]
+
+        for rel_data in relationships_data:
+            try:
+                # Check if relationship already exists
+                existing = await collection.find_one({
+                    "platform": rel_data["platform"],
+                    "relationship_type": rel_data["relationship_type"],
+                    "source_username": rel_data["source_username"],
+                    "target_username": rel_data["target_username"]
+                })
+
+                if existing:
+                    logger.info(f"Relationship {rel_data['relationship_type']} {rel_data['username']} -> {rel_data['target_username']} already exists, skipping")
+                    continue
+
+                # Insert the new relationship
+                await collection.insert_one(rel_data)
+                saved_count += 1
+                logger.info(f"Saved relationship {rel_data['relationship_type']} {rel_data['username']}")
+
+            except Exception as e:
+                logger.error(f"Error saving relationship: {e}")
 
         return saved_count

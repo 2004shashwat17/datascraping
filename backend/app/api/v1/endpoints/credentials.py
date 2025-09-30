@@ -20,7 +20,7 @@ class CredentialConnectRequest(BaseModel):
     platform: str  # "instagram", "twitter", etc.
     email: EmailStr
     password: str
-    target: str  # username or hashtag to scrape
+    target: Optional[str] = None  # username or hashtag to scrape (optional for comprehensive collection)
     max_posts: Optional[int] = 10
     api_token: Optional[str] = None  # For Apify
 
@@ -29,8 +29,10 @@ class ConnectResponse(BaseModel):
     success: bool
     message: str
     collected_posts: int = 0
+    collected_followers: Optional[int] = None
+    collected_following: Optional[int] = None
     platform: str
-    target: str
+    target: Optional[str] = None
     error: Optional[str] = None
 
 @router.post("/connect/credentials", response_model=ConnectResponse)
@@ -58,7 +60,7 @@ async def connect_with_credentials(
 
         return ConnectResponse(
             success=True,
-            message=f"Started collecting data from {request.platform} for target {request.target}",
+            message=f"Started collecting data from {request.platform} for target {request.target or 'self'}",
             collected_posts=0,  # Will be updated when collection completes
             platform=request.platform,
             target=request.target
@@ -88,7 +90,14 @@ async def perform_collection(
         )
 
         if result["success"]:
-            logger.info(f"Successfully collected {result['collected_posts']} posts from {platform}/{target}")
+            collected_posts = result.get('collected_posts', 0)
+            collected_followers = result.get('collected_followers', 0)
+            collected_following = result.get('collected_following', 0)
+            
+            if collected_followers > 0 or collected_following > 0:
+                logger.info(f"Successfully collected {collected_posts} posts, {collected_followers} followers, {collected_following} following from {platform}/{target}")
+            else:
+                logger.info(f"Successfully collected {collected_posts} posts from {platform}/{target}")
         else:
             logger.error(f"Failed to collect data from {platform}/{target}: {result.get('error', 'Unknown error')}")
 
@@ -98,10 +107,12 @@ async def perform_collection(
 @router.get("/connect/status")
 async def get_collection_status(current_user: User = Depends(get_current_user)):
     """
-    Get the status of ongoing collections (placeholder for now)
+    Get the status of ongoing collections
     """
+    # For now, just return a placeholder
     # TODO: Implement proper status tracking with database
     return {
-        "message": "Collection status tracking not yet implemented",
-        "active_collections": []
+        "message": "Collection runs in background. Check backend logs for results.",
+        "status": "Check backend console/logs for detailed collection results",
+        "last_collection": "Unknown"
     }

@@ -8,7 +8,7 @@ from beanie import init_beanie
 import logging
 from typing import Optional
 from app.core.config import get_settings
-from app.models.mongo_models import SocialMediaPost, User, ThreatDetection, TrendAnalysis
+from app.models.mongo_models import User
 from app.models.social_auth_models import (
     SocialAccount, 
     CollectedPost, 
@@ -117,10 +117,7 @@ async def connect_to_mongo():
                 await init_beanie(
                     database=mongodb.database,
                     document_models=[
-                        SocialMediaPost,
                         User,
-                        ThreatDetection,
-                        TrendAnalysis,
                         SocialAccount,
                         CollectedPost,
                         CollectedConnection,

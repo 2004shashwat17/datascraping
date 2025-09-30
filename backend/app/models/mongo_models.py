@@ -254,3 +254,25 @@ class AnalyticsSummary(Document):
             [("summary_type", 1), ("summary_date", -1)],
             [("created_at", -1)],
         ]
+
+
+# Social Media Relationship Document
+class SocialMediaRelationship(Document):
+    """Social media relationship document (followers/following)"""
+    platform: PlatformEnum
+    relationship_type: str  # "follower" or "following"
+    source_username: str  # The user whose followers/following we're collecting
+    target_username: str  # The follower or followee
+    target_full_name: Optional[str] = None
+    target_profile_url: Optional[str] = None
+    is_private: bool = False
+    is_verified: bool = False
+    collected_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    class Settings:
+        name = "social_media_relationships"
+        indexes = [
+            [("platform", 1), ("relationship_type", 1), ("source_username", 1)],
+            [("target_username", 1)],
+            [("collected_at", -1)],
+        ]

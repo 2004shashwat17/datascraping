@@ -236,6 +236,9 @@ class OAuthState(Document):
     user_id: str = Field(..., description="User ID initiating OAuth")
     platform: PlatformType
     
+    # PKCE support for Twitter
+    code_verifier: Optional[str] = None
+    
     # Metadata
     created_at: datetime = Field(default_factory=datetime.utcnow)
     expires_at: datetime = Field(..., description="When state expires")

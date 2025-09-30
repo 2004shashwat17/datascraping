@@ -394,8 +394,9 @@ class OAuthDataCollector:
         posts = []
 
         try:
-            # Reddit API endpoint for user's posts
-            url = "https://oauth.reddit.com/user/me/submitted"
+            # Reddit API endpoint for user's posts - use username instead of 'me'
+            username = account.username
+            url = f"https://oauth.reddit.com/user/{username}/submitted"
             headers = {
                 "Authorization": f"bearer {account.access_token}",
                 "User-Agent": "OSINT-Platform/1.0"
@@ -405,12 +406,21 @@ class OAuthDataCollector:
                 "sort": "new"
             }
 
+            print(f"Reddit API URL: {url}")
+            print(f"Reddit Username: {username}")
+            print(f"Access Token Present: {bool(account.access_token)}")
+
             async with self.session.get(url, headers=headers, params=params) as response:
+                print(f"Reddit API Response Status: {response.status}")
+
                 if response.status == 200:
                     data = await response.json()
+                    print(f"Reddit API Response Data Keys: {list(data.keys()) if isinstance(data, dict) else 'Not a dict'}")
+                    print(f"Reddit Posts Found: {len(data.get('data', {}).get('children', []))}")
 
                     for post in data.get("data", {}).get("children", []):
                         post_data = post["data"]
+                        print(f"Processing post: {post_data.get('id')} - {post_data.get('title', '')[:50]}")
                         post_obj = {
                             "platform": PlatformEnum.REDDIT,
                             "post_id": post_data["id"],
@@ -429,6 +439,10 @@ class OAuthDataCollector:
                             "threat_level": ThreatLevelEnum.LOW
                         }
                         posts.append(post_obj)
+                else:
+                    error_text = await response.text()
+                    print(f"Reddit API Error Response: {error_text}")
+                    print(f"Reddit API Headers: {dict(response.headers)}")
 
         except Exception as e:
             logger.error(f"Error collecting Reddit data: {e}")

@@ -6,6 +6,7 @@ import secrets
 import base64
 import asyncio
 import os
+import hashlib
 from typing import Dict, Optional, Tuple
 from datetime import datetime, timedelta
 from urllib.parse import urlencode, parse_qs
@@ -17,20 +18,6 @@ from app.models.social_auth_models import SocialAccount, OAuthState, PlatformTyp
 from app.core.oauth_config import PLATFORM_CONFIGS
 from app.services import oauth_data_collector
 import logging
-
-logger = logging.getLogger(__name__)
-import httpx
-import secrets
-import base64
-import os
-from urllib.parse import urlencode, parse_qs
-from typing import Dict, Optional, Tuple
-from datetime import datetime, timedelta
-import logging
-
-from app.core.oauth_config import oauth_settings, PLATFORM_CONFIGS
-from app.models.social_auth_models import SocialAccount, PlatformType, OAuthState
-from app.services.oauth_data_collector import oauth_data_collector
 
 logger = logging.getLogger(__name__)
 
@@ -97,13 +84,23 @@ class OAuthService:
         if platform == "reddit":
             params["duration"] = "permanent"
         elif platform == "twitter":
-            params["code_challenge"] = "challenge"
-            params["code_challenge_method"] = "plain"
+            # Generate PKCE code verifier and challenge
+            code_verifier = secrets.token_urlsafe(32)
+            code_challenge = base64.urlsafe_b64encode(
+                hashlib.sha256(code_verifier.encode()).digest()
+            ).decode().rstrip('=')
+            params["code_challenge"] = code_challenge
+            params["code_challenge_method"] = "S256"
         elif platform == "google":
             params["access_type"] = "offline"
             params["prompt"] = "consent"
         
         auth_url = f"{config['auth_url']}?{urlencode(params)}"
+        
+        # Store state for security verification (with code_verifier for Twitter)
+        code_verifier_for_storage = code_verifier if platform == "twitter" else None
+        await self._store_oauth_state(state, user_id, platform, code_verifier_for_storage)
+        
         return auth_url, state
     
     async def handle_callback(self, platform: str, code: str, state: str) -> Dict:
@@ -114,6 +111,7 @@ class OAuthService:
             raise ValueError("Invalid or expired OAuth state")
         
         user_id = stored_data["user_id"]
+        code_verifier = stored_data.get("code_verifier")
         
         # Determine actual platform for API calls (Instagram routes through Facebook)
         actual_platform = "facebook" if platform == "instagram" else platform
@@ -140,7 +138,7 @@ class OAuthService:
                 }
             else:
                 # Exchange code for access token
-                token_data = await self._exchange_code_for_token(actual_platform, code)
+                token_data = await self._exchange_code_for_token(actual_platform, code, code_verifier)
                 
                 # Get user profile
                 profile_data = await self._get_user_profile(actual_platform, token_data["access_token"])
@@ -172,7 +170,7 @@ class OAuthService:
             logger.error(f"OAuth callback failed for {platform}: {e}")
             raise Exception(f"Authentication failed: {str(e)}")
     
-    async def _exchange_code_for_token(self, platform: str, code: str) -> Dict:
+    async def _exchange_code_for_token(self, platform: str, code: str, code_verifier: Optional[str] = None) -> Dict:
         """Exchange authorization code for access token"""
         config = PLATFORM_CONFIGS[platform]
         
@@ -205,6 +203,10 @@ class OAuthService:
             "grant_type": "authorization_code"
         }
         
+        # Add code_verifier for Twitter PKCE
+        if platform == "twitter" and code_verifier:
+            data["code_verifier"] = code_verifier
+        
         # Platform-specific headers and authentication
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
         
@@ -214,6 +216,13 @@ class OAuthService:
             encoded_auth = base64.b64encode(auth_string.encode()).decode()
             headers["Authorization"] = f"Basic {encoded_auth}"
             headers["User-Agent"] = "OSINT-Platform/1.0"
+            data.pop("client_secret")
+        elif platform == "twitter":
+            # Twitter OAuth 2.0 requires basic auth
+            auth_string = f"{data['client_id']}:{data['client_secret']}"
+            encoded_auth = base64.b64encode(auth_string.encode()).decode()
+            headers["Authorization"] = f"Basic {encoded_auth}"
+            data.pop("client_id")
             data.pop("client_secret")
         
         response = await self.http_client.post(
@@ -317,6 +326,12 @@ class OAuthService:
     
     async def _save_social_account(self, user_id: str, platform: str, token_data: Dict, profile_data: Dict) -> SocialAccount:
         """Save social account to database"""
+        # Map OAuth platform names to PlatformType enum values
+        platform_mapping = {
+            "google": "youtube"
+        }
+        db_platform = platform_mapping.get(platform, platform.lower())
+        
         # Calculate token expiration
         expires_at = None
         if "expires_in" in token_data:
@@ -325,7 +340,7 @@ class OAuthService:
         # Check if account already exists
         existing_account = await SocialAccount.find_one(
             SocialAccount.user_id == user_id,
-            SocialAccount.platform == PlatformType(platform),
+            SocialAccount.platform == PlatformType(db_platform),
             SocialAccount.platform_user_id == profile_data["user_id"]
         )
         
@@ -347,7 +362,7 @@ class OAuthService:
         # Create new account
         social_account = SocialAccount(
             user_id=user_id,
-            platform=PlatformType(platform),
+            platform=PlatformType(db_platform),
             platform_user_id=profile_data["user_id"],
             username=profile_data["username"],
             display_name=profile_data["display_name"],
@@ -363,14 +378,21 @@ class OAuthService:
         await social_account.save()
         return social_account
     
-    async def _store_oauth_state(self, state: str, user_id: str, platform: str):
+    async def _store_oauth_state(self, state: str, user_id: str, platform: str, code_verifier: Optional[str] = None):
         """Store OAuth state for verification"""
+        # Map OAuth platform names to PlatformType enum values
+        platform_mapping = {
+            "google": "youtube"
+        }
+        db_platform = platform_mapping.get(platform, platform.lower())
+        
         expires_at = datetime.utcnow() + timedelta(minutes=10)  # 10 minute expiry
         
         oauth_state = OAuthState(
             state=state,
             user_id=user_id,
-            platform=PlatformType(platform),
+            platform=PlatformType(db_platform),
+            code_verifier=code_verifier,
             expires_at=expires_at
         )
         
@@ -378,9 +400,15 @@ class OAuthService:
     
     async def _verify_oauth_state(self, state: str, platform: str) -> Optional[Dict]:
         """Verify OAuth state and return stored data"""
+        # Map OAuth platform names to PlatformType enum values
+        platform_mapping = {
+            "google": "youtube"
+        }
+        db_platform = platform_mapping.get(platform, platform.lower())
+        
         oauth_state = await OAuthState.find_one(
             OAuthState.state == state,
-            OAuthState.platform == PlatformType(platform),
+            OAuthState.platform == PlatformType(db_platform),
             OAuthState.is_used == False,
             OAuthState.expires_at > datetime.utcnow()
         )
@@ -394,7 +422,8 @@ class OAuthService:
         
         return {
             "user_id": oauth_state.user_id,
-            "platform": oauth_state.platform
+            "platform": oauth_state.platform,
+            "code_verifier": oauth_state.code_verifier
         }
     
     async def refresh_token(self, social_account: SocialAccount) -> bool:

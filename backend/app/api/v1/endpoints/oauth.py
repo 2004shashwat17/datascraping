@@ -76,7 +76,7 @@ async def get_connected_accounts(current_user: User = Depends(get_current_user))
             {
                 "id": str(account.id),
                 "user_id": account.user_id,
-                "platform": account.platform.value,
+                "platform": account.platform.value.lower(),
                 "platform_user_id": account.platform_user_id,
                 "username": account.username,
                 "display_name": account.display_name,
@@ -102,10 +102,16 @@ async def disconnect_platform(
 ):
     """Disconnect a social media platform"""
     try:
+        # Map OAuth platform names to PlatformType enum values
+        platform_mapping = {
+            "google": "youtube"
+        }
+        db_platform = platform_mapping.get(platform, platform.lower())
+        
         # Find and delete the social account
         account = await SocialAccount.find_one(
             SocialAccount.user_id == str(current_user.id),
-            SocialAccount.platform == PlatformType(platform)
+            SocialAccount.platform == PlatformType(db_platform)
         )
         
         if not account:
