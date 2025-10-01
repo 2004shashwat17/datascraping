@@ -10,7 +10,6 @@ from enum import Enum
 class PlatformType(str, Enum):
     FACEBOOK = "facebook"
     REDDIT = "reddit"
-    YOUTUBE = "youtube"
     TWITTER = "twitter"
 
 class ConnectionType(str, Enum):

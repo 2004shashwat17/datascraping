@@ -3,7 +3,7 @@ API v1 router module that aggregates all API endpoints.
 """
 
 from fastapi import APIRouter
-from app.api.v1.endpoints import posts_mongo, auth, dashboard, oauth, credentials
+from app.api.v1.endpoints import posts_mongo, auth, dashboard, oauth, credentials, twitter
 
 api_router = APIRouter()
 
@@ -35,6 +35,11 @@ api_router.include_router(
     credentials.router,
     prefix="/collect",
     tags=["Credential-based Collection"]
+)
+
+api_router.include_router(
+    twitter.router,
+    tags=["Twitter API IO"]
 )
 
 # TODO: Add other endpoint routers when implemented:

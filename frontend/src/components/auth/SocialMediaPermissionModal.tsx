@@ -32,7 +32,6 @@ import {
   Facebook,
   Twitter,
   Instagram,
-  Youtube,
   AlertTriangle,
   CheckCircle,
 } from 'lucide-react';
@@ -96,13 +95,6 @@ const SocialMediaPermissionModal: React.FC<PermissionModalProps> = ({
       name: 'Instagram',
       icon: <Instagram size={24} color="#E4405F" />,
       description: 'Analyze visual content and user interactions',
-      enabled: false,
-    },
-    {
-      id: 'youtube',
-      name: 'YouTube',
-      icon: <Youtube size={24} color="#FF0000" />,
-      description: 'Video content and comment analysis',
       enabled: false,
     },
     {

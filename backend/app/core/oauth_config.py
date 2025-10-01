@@ -15,11 +15,6 @@ class OAuthSettings(BaseSettings):
     REDDIT_CLIENT_SECRET: str = ""
     REDDIT_REDIRECT_URI: str = "http://localhost:8001/api/v1/oauth/reddit/callback"
     
-    # YouTube (Google)
-    GOOGLE_CLIENT_ID: str = ""
-    GOOGLE_CLIENT_SECRET: str = ""
-    GOOGLE_REDIRECT_URI: str = "http://localhost:8001/api/v1/oauth/google/callback"
-    
     # Twitter
     TWITTER_CLIENT_ID: str = ""
     TWITTER_CLIENT_SECRET: str = ""
@@ -44,21 +39,6 @@ PLATFORM_CONFIGS = {
         "token_url": "https://www.reddit.com/api/v1/access_token",
         "api_base": "https://oauth.reddit.com",
         "scopes": ["identity", "read", "history", "subscribe", "privatemessages"]
-    },
-    "google": {
-        "auth_url": "https://accounts.google.com/o/oauth2/v2/auth",
-        "token_url": "https://oauth2.googleapis.com/token",
-        "api_base": "https://www.googleapis.com/youtube/v3",
-        "scopes": [
-            "https://www.googleapis.com/auth/youtube.readonly",
-            "https://www.googleapis.com/auth/youtube.force-ssl"
-        ]
-    },
-    "twitter": {
-        "auth_url": "https://twitter.com/i/oauth2/authorize",
-        "token_url": "https://api.twitter.com/2/oauth2/token",
-        "api_base": "https://api.twitter.com/2",
-        "scopes": ["tweet.read", "users.read", "follows.read", "like.read", "bookmark.read"]
     }
 }
 
@@ -85,12 +65,5 @@ PLATFORM_DATA_TYPES = {
         "subscriptions": "Channel subscriptions",
         "likes": "Liked videos",
         "comments": "Video comments"
-    },
-    "twitter": {
-        "tweets": "User's tweets and retweets",
-        "followers": "Followers list",
-        "following": "Following list",
-        "likes": "Liked tweets",
-        "bookmarks": "Bookmarked tweets"
     }
 }

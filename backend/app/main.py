@@ -16,6 +16,14 @@ from app.core.config import get_settings, setup_logging
 from app.core.mongodb import connect_to_mongo, close_mongo_connection, ping_database
 from app.core.security import SecurityHeaders, generate_correlation_id, log_security_event
 from app.api.v1.api import api_router
+from app.models.mongo_models import User
+from passlib.context import CryptContext
+
+# Password hashing for default user
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def get_password_hash(password: str) -> str:
+    return pwd_context.hash(password)
 
 # Initialize settings and logging
 settings = get_settings()
@@ -35,6 +43,26 @@ async def lifespan(app: FastAPI):
         connected = await connect_to_mongo()
         if connected:
             logger.info("✅ MongoDB connected successfully")
+            
+            # Create default user if no users exist
+            try:
+                user_count = await User.count()
+                if user_count == 0:
+                    logger.info("No users found, creating default admin user...")
+                    default_user = User(
+                        username="admin",
+                        email="admin@example.com",
+                        full_name="Administrator",
+                        hashed_password=get_password_hash("admin123"),
+                        is_active=True,
+                        is_superuser=True
+                    )
+                    await default_user.insert()
+                    logger.info("✅ Default admin user created: username='admin', password='admin123'")
+                else:
+                    logger.info(f"Found {user_count} existing users")
+            except Exception as e:
+                logger.warning(f"Could not check/create default user: {e}")
         else:
             logger.warning("⚠️  MongoDB connection failed, starting in limited mode")
             # Allow server to start without MongoDB for debugging
@@ -171,31 +199,14 @@ async def detailed_health_check():
         db_healthy = await ping_database()
         health_status["checks"]["database"] = {
             "status": "healthy" if db_healthy else "unhealthy",
-            "details": "MongoDB connection successful" if db_healthy else "MongoDB connection failed"
         }
     except Exception as e:
         health_status["checks"]["database"] = {
             "status": "unhealthy",
-            "details": f"Database error: {str(e)}"
+            "error": str(e)
         }
-        health_status["status"] = "degraded"
-    
-    # Additional service health checks can be added here
-    # Currently using MongoDB as primary data store
     
     return health_status
-
-
-@app.get("/", tags=["Root"])
-async def root():
-    """Root endpoint with API information"""
-    return {
-        "message": f"Welcome to {settings.app_name}",
-        "version": settings.version,
-        "docs_url": settings.docs_url,
-        "api_prefix": settings.api_prefix,
-        "timestamp": time.time()
-    }
 
 
 # Include API routes

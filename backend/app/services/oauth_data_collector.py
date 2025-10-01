@@ -155,8 +155,6 @@ class OAuthDataCollector:
 
         if platform == "facebook":
             return await self._collect_facebook_data(account)
-        elif platform == "twitter":
-            return await self._collect_twitter_data(account)
         elif platform == "reddit":
             return await self._collect_reddit_data(account)
         elif platform == "youtube":
@@ -289,81 +287,6 @@ class OAuthDataCollector:
 
         except Exception as e:
             logger.error(f"Error collecting Instagram data: {e}")
-
-    async def _collect_twitter_data(self, account: SocialAccount) -> Dict[str, List[Dict[str, Any]]]:
-        """Collect data from Twitter using API v2"""
-        data = {"posts": [], "connections": [], "interactions": [], "search_histories": []}
-
-        try:
-            # Collect posts with comments and likes
-            if account.collect_posts:
-                posts_data = await self._collect_twitter_posts(account)
-                data["posts"].extend(posts_data)
-
-            # Collect connections (followers/following)
-            if account.collect_connections:
-                connections_data = await self._collect_twitter_connections(account)
-                data["connections"].extend(connections_data)
-
-            # Collect interactions
-            interactions_data = await self._collect_twitter_interactions(account)
-            data["interactions"].extend(interactions_data)
-
-        except Exception as e:
-            logger.error(f"Error collecting Twitter data: {e}")
-
-        return data
-
-    async def _collect_twitter_posts(self, account: SocialAccount) -> List[Dict[str, Any]]:
-        """Collect tweets with comments and likes from Twitter"""
-        posts = []
-
-        try:
-            # Twitter API v2 endpoint for user's tweets
-            url = "https://api.twitter.com/2/users/me/tweets"
-            headers = {
-                "Authorization": f"Bearer {account.access_token}",
-                "Content-Type": "application/json"
-            }
-            params = {
-                "max_results": 50,
-                "tweet.fields": "created_at,public_metrics,entities,context_annotations",
-                "expansions": "attachments.media_keys",
-                "media.fields": "url,type"
-            }
-
-            async with self.session.get(url, headers=headers, params=params) as response:
-                if response.status == 200:
-                    data = await response.json()
-
-                    for tweet in data.get("data", []):
-                        metrics = tweet.get("public_metrics", {})
-                        post_data = {
-                            "platform": PlatformEnum.TWITTER,
-                            "post_id": tweet["id"],
-                            "author": account.username,
-                            "author_username": account.username,
-                            "content": tweet.get("text", ""),
-                            "url": f"https://twitter.com/i/status/{tweet['id']}",
-                            "posted_at": datetime.fromisoformat(tweet["created_at"].replace('Z', '+00:00')),
-                            "engagement_metrics": {
-                                "likes": metrics.get("like_count", 0),
-                                "retweets": metrics.get("retweet_count", 0),
-                                "replies": metrics.get("reply_count", 0)
-                            },
-                            "likes_count": metrics.get("like_count", 0),
-                            "shares_count": metrics.get("retweet_count", 0),
-                            "comments_count": metrics.get("reply_count", 0),
-                            "hashtags": [tag["tag"] for tag in tweet.get("entities", {}).get("hashtags", [])],
-                            "collected_by": account.user_id,
-                            "threat_level": ThreatLevelEnum.LOW
-                        }
-                        posts.append(post_data)
-
-        except Exception as e:
-            logger.error(f"Error collecting Twitter data: {e}")
-
-        return posts
 
     async def _collect_reddit_data(self, account: SocialAccount) -> Dict[str, List[Dict[str, Any]]]:
         """Collect data from Reddit using API"""
@@ -538,15 +461,6 @@ class OAuthDataCollector:
         return []
 
     # Similar placeholder methods would be needed for other platforms
-    async def _collect_twitter_connections(self, account: SocialAccount) -> List[Dict[str, Any]]:
-        return []
-
-    async def _collect_twitter_interactions(self, account: SocialAccount) -> List[Dict[str, Any]]:
-        return []
-
-    async def _collect_twitter_search_history(self, account: SocialAccount) -> List[Dict[str, Any]]:
-        return []
-
     async def _collect_reddit_connections(self, account: SocialAccount) -> List[Dict[str, Any]]:
         return []
 

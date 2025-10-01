@@ -26,7 +26,6 @@ import {
   Facebook,
   Instagram,
   Twitter,
-  YouTube,
   Reddit,
   Refresh,
   Delete,
@@ -48,6 +47,10 @@ const SocialAccountsOAuthView: React.FC = () => {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [connecting, setConnecting] = useState<string | null>(null);
   const [disconnecting, setDisconnecting] = useState<string | null>(null);
+  const [browserCredentials, setBrowserCredentials] = useState<Record<string, any>>({});
+  const [browserJobs, setBrowserJobs] = useState<Record<string, any>>({});
+  const [browserDialogOpen, setBrowserDialogOpen] = useState(false);
+  const [selectedBrowserPlatform, setSelectedBrowserPlatform] = useState<string>('');
   const [searchParams] = useSearchParams();
 
   // Credential form state
@@ -66,16 +69,21 @@ const SocialAccountsOAuthView: React.FC = () => {
     facebook: <Facebook sx={{ color: '#1877F2' }} />,
     instagram: <Instagram sx={{ color: '#E4405F' }} />,
     twitter: <Twitter sx={{ color: '#1DA1F2' }} />,
-    youtube: <YouTube sx={{ color: '#FF0000' }} />,
     reddit: <Reddit sx={{ color: '#FF4500' }} />,
   };
 
   const platformNames: Record<string, string> = {
     facebook: 'Facebook',
     instagram: 'Instagram (Credential-based Scraping - Feed, Posts, Followers, Following)',
-    twitter: 'Twitter',
-    youtube: 'YouTube',
+    twitter: 'Twitter (TwitterApiIO - Public Data Collection)',
     reddit: 'Reddit',
+  };
+
+  const platformDescriptions: Record<string, string> = {
+    facebook: 'OAuth or Browser Automation available',
+    instagram: 'Credential-based scraping with Instaloader',
+    twitter: 'TwitterApiIO - Enter username for data collection',
+    reddit: 'OAuth authentication',
   };
 
   const loadAccounts = async () => {
@@ -146,8 +154,8 @@ const SocialAccountsOAuthView: React.FC = () => {
       setConnecting(platform);
       setError(null);
 
-      // For Instagram, show credential form instead of OAuth
-      if (platform === 'instagram') {
+      // For Instagram and Twitter, show credential form instead of OAuth
+      if (platform === 'instagram' || platform === 'twitter') {
         setSelectedPlatform(platform);
         setCredentialDialogOpen(true);
         setConnecting(null);
@@ -155,9 +163,7 @@ const SocialAccountsOAuthView: React.FC = () => {
       }
 
       // For other platforms, use OAuth
-      // Map frontend platform names to backend API names
-      const apiPlatform = platform === 'youtube' ? 'google' : platform;
-      const response = await apiClient.get<OAuthConnectResponse>(`/oauth/connect/${apiPlatform}`);
+      const response = await apiClient.get<OAuthConnectResponse>(`/oauth/connect/${platform}`);
       if (response.data.auth_url) {
         window.location.href = response.data.auth_url;
       }
@@ -175,8 +181,7 @@ const SocialAccountsOAuthView: React.FC = () => {
       setError(null);
 
       // Map frontend platform names to backend API names
-      const apiPlatform = platform === 'youtube' ? 'google' : platform;
-      await apiClient.delete(`/oauth/disconnect/${apiPlatform}`);
+      await apiClient.delete(`/oauth/disconnect/${platform}`);
       
       // Refresh accounts after disconnect
       await loadAccounts();
@@ -188,24 +193,103 @@ const SocialAccountsOAuthView: React.FC = () => {
     }
   };
 
+  const handleBrowserConnect = async (platform: string) => {
+    setSelectedBrowserPlatform(platform);
+    setBrowserDialogOpen(true);
+  };
+
+  const handleBrowserCredentialsSubmit = async () => {
+    try {
+      setConnecting(selectedBrowserPlatform);
+      setError(null);
+
+      const creds = browserCredentials[selectedBrowserPlatform];
+      if (!creds) {
+        setError('Please enter credentials');
+        return;
+      }
+
+      // Store credentials securely
+      await apiClient.post(`/browser/credentials/${selectedBrowserPlatform}`, creds);
+
+      // Start scraping job
+      const jobResponse = await apiClient.post('/browser/scrape', {
+        platform: selectedBrowserPlatform,
+        collect_profile: true,
+        collect_posts: false,
+        collect_friends: false,
+        max_posts: 10
+      });
+
+      // Store job info
+      setBrowserJobs(prev => ({
+        ...prev,
+        [selectedBrowserPlatform]: jobResponse.data
+      }));
+
+      setBrowserDialogOpen(false);
+      setSuccessMessage(`Browser scraping started for ${platformNames[selectedBrowserPlatform]}`);
+
+    } catch (err: any) {
+      console.error('Error with browser automation:', err);
+      setError(err.response?.data?.detail || 'Failed to start browser scraping');
+    } finally {
+      setConnecting(null);
+    }
+  };
+
+  const checkBrowserJobStatus = async (platform: string) => {
+    try {
+      const job = browserJobs[platform];
+      if (!job) return;
+
+      const statusResponse = await apiClient.get(`/browser/job/${job.job_id}`);
+      setBrowserJobs(prev => ({
+        ...prev,
+        [platform]: statusResponse.data
+      }));
+    } catch (err: any) {
+      console.error('Error checking job status:', err);
+    }
+  };
+
   const handleCredentialSubmit = async () => {
     try {
       setConnecting(selectedPlatform);
       setError(null);
 
-      const requestData = {
-        platform: selectedPlatform,
-        email: credentials.email,
-        password: credentials.password,
-        target: credentials.collectOwnData ? null : credentials.target, // Send null for comprehensive collection
-        max_posts: credentials.maxPosts,
-        ...(credentials.apiToken && { api_token: credentials.apiToken }),
-      };
+      let requestData: any;
+      let endpoint: string;
 
-      const response = await apiClient.post('/collect/connect/credentials', requestData);
+      if (selectedPlatform === 'twitter') {
+        // For Twitter, use TwitterApiIO endpoint
+        requestData = {
+          username: credentials.target.replace('@', ''), // Remove @ if present
+          max_posts: credentials.maxPosts,
+        };
+        endpoint = '/twitter/connect/credentials';
+      } else {
+        // For Instagram and others
+        requestData = {
+          platform: selectedPlatform,
+          email: credentials.email,
+          password: credentials.password,
+          target: credentials.collectOwnData ? null : credentials.target, // Send null for comprehensive collection
+          max_posts: credentials.maxPosts,
+          ...(credentials.apiToken && { api_token: credentials.apiToken }),
+        };
+        endpoint = '/collect/connect/credentials';
+      }
+
+      const response = await apiClient.post(endpoint, requestData);
 
       if ((response.data as any).success) {
         setError(null);
+        const postsCollected = (response.data as any).posts_collected || 0;
+        const successMsg = selectedPlatform === 'twitter' 
+          ? `Successfully collected ${postsCollected} posts from @${(response.data as any).username}! Data saved to database.`
+          : `Successfully connected to ${platformNames[selectedPlatform]}!`;
+        setSuccessMessage(successMsg);
         // Close dialog and reset form
         setCredentialDialogOpen(false);
         setCredentials({
@@ -216,7 +300,7 @@ const SocialAccountsOAuthView: React.FC = () => {
           apiToken: '',
           collectOwnData: false,
         });
-        // Optionally refresh accounts or show success message
+        // Refresh accounts
         loadAccounts();
       } else {
         setError((response.data as any).error || 'Failed to connect with credentials');
@@ -337,15 +421,45 @@ const SocialAccountsOAuthView: React.FC = () => {
                         </Button>
                       </>
                     ) : (
-                      <Button
-                        variant="contained"
-                        startIcon={platform === 'instagram' ? <Login /> : <OpenInBrowser />}
-                        onClick={() => handleConnect(platform)}
-                        disabled={isConnecting}
-                      >
-                        {isConnecting ? <CircularProgress size={20} /> : 
-                         platform === 'instagram' ? 'Enter Credentials' : 'Connect'}
-                      </Button>
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, width: '100%' }}>
+                        <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.75rem' }}>
+                          {platformDescriptions[platform]}
+                        </Typography>
+                        <Box sx={{ display: 'flex', gap: 1 }}>
+                          {platform === 'instagram' || platform === 'twitter' ? (
+                            <Button
+                              variant="contained"
+                              startIcon={<Login />}
+                              onClick={() => handleConnect(platform)}
+                              disabled={isConnecting}
+                              fullWidth
+                            >
+                              {isConnecting ? <CircularProgress size={20} /> : 'Enter Credentials'}
+                            </Button>
+                          ) : (
+                            <>
+                              <Button
+                                variant="contained"
+                                startIcon={<OpenInBrowser />}
+                                onClick={() => handleConnect(platform)}
+                                disabled={isConnecting}
+                                size="small"
+                              >
+                                {isConnecting ? <CircularProgress size={16} /> : 'OAuth'}
+                              </Button>
+                              <Button
+                                variant="outlined"
+                                startIcon={<OpenInBrowser />}
+                                onClick={() => handleBrowserConnect(platform)}
+                                disabled={isConnecting}
+                                size="small"
+                              >
+                                {isConnecting ? <CircularProgress size={16} /> : 'Browser'}
+                              </Button>
+                            </>
+                          )}
+                        </Box>
+                      </Box>
                     )}
                   </Box>
                 </Box>
@@ -365,65 +479,93 @@ const SocialAccountsOAuthView: React.FC = () => {
       {/* Credential Input Dialog */}
       <Dialog open={credentialDialogOpen} onClose={handleCredentialDialogClose} maxWidth="sm" fullWidth>
         <DialogTitle>
-          {credentials.collectOwnData ? 'Collect Your Instagram Data' : `Connect to ${platformNames[selectedPlatform] || selectedPlatform}`}
+          {selectedPlatform === 'twitter' ? 'Connect Twitter Account' : credentials.collectOwnData ? 'Collect Your Instagram Data' : `Connect to ${platformNames[selectedPlatform] || selectedPlatform}`}
         </DialogTitle>
         <DialogContent>
           <Box sx={{ pt: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <TextField
-              label="Email"
-              type="email"
-              value={credentials.email}
-              onChange={(e) => setCredentials({ ...credentials, email: e.target.value })}
-              fullWidth
-              required
-            />
-            <TextField
-              label="Password"
-              type="password"
-              value={credentials.password}
-              onChange={(e) => setCredentials({ ...credentials, password: e.target.value })}
-              fullWidth
-              required
-            />
-            {selectedPlatform === 'instagram' && (
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={credentials.collectOwnData}
-                    onChange={(e) => setCredentials({ ...credentials, collectOwnData: e.target.checked })}
+            {selectedPlatform === 'twitter' ? (
+              <>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                  Enter a Twitter username to collect public data from that account using TwitterApiIO.
+                </Typography>
+                <TextField
+                  label="Twitter Username"
+                  value={credentials.target}
+                  onChange={(e) => setCredentials({ ...credentials, target: e.target.value })}
+                  fullWidth
+                  required
+                  placeholder="@username or username"
+                  helperText="Enter the Twitter username to collect data from (without @)"
+                />
+                <TextField
+                  label="Maximum Posts"
+                  type="number"
+                  value={credentials.maxPosts}
+                  onChange={(e) => setCredentials({ ...credentials, maxPosts: parseInt(e.target.value) || 10 })}
+                  fullWidth
+                  inputProps={{ min: 1, max: 100 }}
+                  helperText="Maximum number of tweets to collect (1-100)"
+                />
+              </>
+            ) : (
+              <>
+                <TextField
+                  label="Email"
+                  type="email"
+                  value={credentials.email}
+                  onChange={(e) => setCredentials({ ...credentials, email: e.target.value })}
+                  fullWidth
+                  required
+                />
+                <TextField
+                  label="Password"
+                  type="password"
+                  value={credentials.password}
+                  onChange={(e) => setCredentials({ ...credentials, password: e.target.value })}
+                  fullWidth
+                  required
+                />
+                {selectedPlatform === 'instagram' && (
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={credentials.collectOwnData}
+                        onChange={(e) => setCredentials({ ...credentials, collectOwnData: e.target.checked })}
+                      />
+                    }
+                    label="Collect my own comprehensive data (feed, posts, followers, following)"
                   />
-                }
-                label="Collect my own comprehensive data (feed, posts, followers, following)"
-              />
-            )}
-            {!credentials.collectOwnData && (
-              <TextField
-                label="Target Username/Profile"
-                value={credentials.target}
-                onChange={(e) => setCredentials({ ...credentials, target: e.target.value })}
-                fullWidth
-                required={!credentials.collectOwnData}
-                helperText={credentials.collectOwnData ? "Not needed for own data collection" : "Enter the Instagram username to scrape data from"}
-                disabled={credentials.collectOwnData}
-              />
-            )}
-            <TextField
-              label="Maximum Items"
-              type="number"
-              value={credentials.maxPosts}
-              onChange={(e) => setCredentials({ ...credentials, maxPosts: parseInt(e.target.value) || 10 })}
-              fullWidth
-              inputProps={{ min: 1, max: 100 }}
-              helperText={credentials.collectOwnData ? "Maximum posts/followers/following to collect (1-100)" : "Maximum number of posts to collect (1-100)"}
-            />
-            {selectedPlatform !== 'instagram' && (
-              <TextField
-                label="API Token (Optional)"
-                value={credentials.apiToken}
-                onChange={(e) => setCredentials({ ...credentials, apiToken: e.target.value })}
-                fullWidth
-                helperText="Apify API token for enhanced scraping"
-              />
+                )}
+                {!credentials.collectOwnData && (
+                  <TextField
+                    label="Target Username/Profile"
+                    value={credentials.target}
+                    onChange={(e) => setCredentials({ ...credentials, target: e.target.value })}
+                    fullWidth
+                    required={!credentials.collectOwnData}
+                    helperText={credentials.collectOwnData ? "Not needed for own data collection" : "Enter the Instagram username to scrape data from"}
+                    disabled={credentials.collectOwnData}
+                  />
+                )}
+                <TextField
+                  label="Maximum Items"
+                  type="number"
+                  value={credentials.maxPosts}
+                  onChange={(e) => setCredentials({ ...credentials, maxPosts: parseInt(e.target.value) || 10 })}
+                  fullWidth
+                  inputProps={{ min: 1, max: 100 }}
+                  helperText={credentials.collectOwnData ? "Maximum posts/followers/following to collect (1-100)" : "Maximum number of posts to collect (1-100)"}
+                />
+                {selectedPlatform !== 'instagram' && (
+                  <TextField
+                    label="API Token (Optional)"
+                    value={credentials.apiToken}
+                    onChange={(e) => setCredentials({ ...credentials, apiToken: e.target.value })}
+                    fullWidth
+                    helperText="Apify API token for enhanced scraping"
+                  />
+                )}
+              </>
             )}
           </Box>
         </DialogContent>
@@ -432,10 +574,54 @@ const SocialAccountsOAuthView: React.FC = () => {
           <Button
             onClick={handleCredentialSubmit}
             variant="contained"
-            disabled={connecting === selectedPlatform || !credentials.email || !credentials.password || (!credentials.collectOwnData && !credentials.target)}
+            disabled={connecting === selectedPlatform || (selectedPlatform === 'twitter' ? !credentials.target : (!credentials.email || !credentials.password || (!credentials.collectOwnData && !credentials.target)))}
             startIcon={connecting === selectedPlatform ? <CircularProgress size={20} /> : <Login />}
           >
-            {connecting === selectedPlatform ? 'Connecting...' : credentials.collectOwnData ? 'Connect & Collect My Data' : 'Connect & Scrape'}
+            {connecting === selectedPlatform ? 'Connecting...' : selectedPlatform === 'twitter' ? 'Connect & Collect Data' : credentials.collectOwnData ? 'Connect & Collect My Data' : 'Connect & Scrape'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Browser Automation Credentials Dialog */}
+      <Dialog open={browserDialogOpen} onClose={() => setBrowserDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          Browser Automation - {platformNames[selectedBrowserPlatform]}
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Enter your credentials for browser-based scraping. Credentials are encrypted and stored securely.
+          </Typography>
+          <TextField
+            fullWidth
+            label={selectedBrowserPlatform === 'twitter' ? 'Username' : 'Email'}
+            value={browserCredentials[selectedBrowserPlatform]?.email || browserCredentials[selectedBrowserPlatform]?.username || ''}
+            onChange={(e) => setBrowserCredentials(prev => ({
+              ...prev,
+              [selectedBrowserPlatform]: {
+                ...prev[selectedBrowserPlatform],
+                [selectedBrowserPlatform === 'twitter' ? 'username' : 'email']: e.target.value
+              }
+            }))}
+            sx={{ mb: 2 }}
+          />
+          <TextField
+            fullWidth
+            label="Password"
+            type="password"
+            value={browserCredentials[selectedBrowserPlatform]?.password || ''}
+            onChange={(e) => setBrowserCredentials(prev => ({
+              ...prev,
+              [selectedBrowserPlatform]: {
+                ...prev[selectedBrowserPlatform],
+                password: e.target.value
+              }
+            }))}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setBrowserDialogOpen(false)}>Cancel</Button>
+          <Button onClick={handleBrowserCredentialsSubmit} variant="contained">
+            Start Browser Scraping
           </Button>
         </DialogActions>
       </Dialog>

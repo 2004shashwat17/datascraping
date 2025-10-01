@@ -76,11 +76,11 @@ class Settings(BaseSettings):
     SECRET_KEY: str = Field("dev-secret-key-change-in-production", description="JWT secret key")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(30, description="JWT token expiration time in minutes")
     
-    # YouTube API settings
-    YOUTUBE_API_KEY: str = Field("", description="YouTube API key for data collection")
-    
     # Apify API settings
     apify_api_token: str = Field("", description="Apify API token for web scraping")
+    
+    # TwitterApiIO settings
+    twitter_api_io_key: str = Field("", description="TwitterApiIO API key for Twitter data collection")
     
     # Additional service configurations can be added here as needed
     

@@ -2,7 +2,7 @@
  * API client configuration and utilities for communicating with the FastAPI backend
  */
 
-const API_BASE_URL = 'http://127.0.0.1:8001/api/v1';
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://127.0.0.1:8001/api/v1';
 
 interface UserData {
   username: string;

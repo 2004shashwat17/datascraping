@@ -14,17 +14,26 @@ from pydantic import BaseModel
 from app.models.mongo_models import User, PlatformEnum
 from app.models.social_auth_models import SocialAccount
 from app.core.config import get_settings
-from app.services.no_api_collector import no_api_collector
 from app.services.oauth_data_collector import oauth_data_collector
 
 settings = get_settings()
 
-# Temporary in-memory user storage (fallback when MongoDB is not available)
-temp_users = {}
-mongodb_available = False
-
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# Temporary in-memory user storage (fallback when MongoDB is not available)
+temp_users = {
+    "admin": {
+        "username": "admin",
+        "email": "admin@example.com",
+        "full_name": "Administrator",
+        "hashed_password": pwd_context.hash("admin123"),
+        "is_active": True,
+        "permissions_granted": False,
+        "enabled_platforms": []
+    }
+}
+mongodb_available = False
 
 # OAuth2 scheme
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/v1/auth/login")

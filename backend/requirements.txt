@@ -22,14 +22,6 @@ aiohttp==3.9.1
 requests==2.31.0
 feedparser==6.0.10
 
-# Selenium Browser Automation (UNLIMITED SOCIAL MEDIA ACCESS!)
-selenium==4.15.2
-selenium-stealth==1.0.6
-webdriver-manager==4.0.1
-
-# Chrome WebDriver for browser automation
-chromedriver-binary==119.0.5945.79.0
-
 # Security and authentication
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
@@ -74,9 +66,6 @@ cachetools==5.3.2
 # Network and security
 cryptography==41.0.7
 urllib3==2.1.0
-
-# Instagram scraping
-instaloader==4.10.1
 
 # Apify web scraping
 apify-client==1.6.1

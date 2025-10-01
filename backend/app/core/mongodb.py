@@ -10,11 +10,7 @@ from typing import Optional
 from app.core.config import get_settings
 from app.models.mongo_models import User
 from app.models.social_auth_models import (
-    SocialAccount, 
-    CollectedPost, 
-    CollectedConnection, 
-    CollectedInteraction,
-    DataCollectionJob,
+    SocialAccount,
     OAuthState
 )
 
@@ -82,7 +78,22 @@ async def connect_to_mongo():
                     "retryWrites": True
                 }
             },
-            # Attempt 3: Local MongoDB fallback
+            # Attempt 3: Atlas with basic SSL settings
+            {
+                "url": settings.database_url,
+                "options": {
+                    "serverSelectionTimeoutMS": 20000,
+                    "connectTimeoutMS": 20000,
+                    "socketTimeoutMS": 20000,
+                    "maxPoolSize": 5,
+                    "minPoolSize": 1,
+                    "tls": True,
+                    "tlsAllowInvalidCertificates": True,
+                    "retryWrites": True,
+                    "ssl_cert_reqs": 0  # Disable certificate verification
+                }
+            },
+            # Attempt 4: Local MongoDB fallback
             {
                 "url": "mongodb://localhost:27017/osint_platform",
                 "options": {
@@ -102,8 +113,16 @@ async def connect_to_mongo():
             # Create motor client
             mongodb.client = AsyncIOMotorClient(attempt["url"], **attempt["options"])
             
-            # Get database
-            mongodb.database = mongodb.client[settings.db_name if hasattr(settings, 'db_name') else 'osint_platform']
+            # Get database - if database name is in URL, use it; otherwise use settings
+            db_name = settings.db_name if hasattr(settings, 'db_name') else 'osint_platform'
+            # For Atlas URLs with database in path, the client automatically selects it
+            if 'mongodb+srv://' in attempt["url"] and '/' in attempt["url"].split('://')[1].split('?')[0]:
+                # Database is specified in the URL
+                mongodb.database = mongodb.client.get_default_database()
+                if mongodb.database is None:
+                    mongodb.database = mongodb.client[db_name]
+            else:
+                mongodb.database = mongodb.client[db_name]
             
             # Test connection
             logger.info(f"Testing MongoDB connection to: {attempt['url'][:50]}...")
@@ -119,10 +138,6 @@ async def connect_to_mongo():
                     document_models=[
                         User,
                         SocialAccount,
-                        CollectedPost,
-                        CollectedConnection,
-                        CollectedInteraction,
-                        DataCollectionJob,
                         OAuthState,
                     ]
                 )
