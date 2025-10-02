@@ -9,6 +9,7 @@ from enum import Enum
 
 class PlatformType(str, Enum):
     FACEBOOK = "facebook"
+    INSTAGRAM = "instagram"
     REDDIT = "reddit"
     TWITTER = "twitter"
 

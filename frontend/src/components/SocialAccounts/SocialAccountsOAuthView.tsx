@@ -74,15 +74,15 @@ const SocialAccountsOAuthView: React.FC = () => {
 
   const platformNames: Record<string, string> = {
     facebook: 'Facebook',
-    instagram: 'Instagram (Credential-based Scraping - Feed, Posts, Followers, Following)',
-    twitter: 'Twitter (TwitterApiIO - Public Data Collection)',
+    instagram: 'Instagram (OAuth - Feed, Posts, Followers, Following)',
+    twitter: 'Twitter (OAuth - Tweets, Followers, Following)',
     reddit: 'Reddit',
   };
 
   const platformDescriptions: Record<string, string> = {
     facebook: 'OAuth or Browser Automation available',
-    instagram: 'Credential-based scraping with Instaloader',
-    twitter: 'TwitterApiIO - Enter username for data collection',
+    instagram: 'OAuth authentication with Instagram Graph API',
+    twitter: 'OAuth authentication with Twitter API v2',
     reddit: 'OAuth authentication',
   };
 
@@ -106,8 +106,18 @@ const SocialAccountsOAuthView: React.FC = () => {
     const success = searchParams.get('success');
     const errorParam = searchParams.get('error');
     const platform = searchParams.get('platform');
+    const code = searchParams.get('code');
+    const state = searchParams.get('state');
 
-    console.log('OAuth callback detected:', { success, error: errorParam, platform, currentPath: window.location.pathname });
+    console.log('OAuth callback detected:', { success, error: errorParam, platform, code, state, currentPath: window.location.pathname });
+
+    // Handle direct OAuth callback (if app redirects directly to frontend)
+    if (code && state && !success && !errorParam) {
+      console.log('Direct OAuth callback detected, redirecting to backend');
+      // Redirect to backend callback endpoint
+      window.location.href = `http://localhost:8001/api/v1/oauth/${platform || 'twitter'}/callback?code=${code}&state=${state}`;
+      return;
+    }
 
     if (success === 'true' && platform) {
       // OAuth successful
@@ -133,6 +143,16 @@ const SocialAccountsOAuthView: React.FC = () => {
     const success = urlParams.get('success');
     const errorParam = urlParams.get('error');
     const platform = urlParams.get('platform');
+    const code = urlParams.get('code');
+    const state = urlParams.get('state');
+
+    // Handle direct OAuth callback (if Twitter app redirects directly to frontend)
+    if (code && state && !success && !errorParam) {
+      console.log('Direct OAuth callback detected, redirecting to backend');
+      // Redirect to backend callback endpoint
+      window.location.href = `http://localhost:8001/api/v1/oauth/${platform || 'twitter'}/callback?code=${code}&state=${state}`;
+      return;
+    }
 
     if (success === 'true' && platform) {
       console.log('OAuth success detected on mount for', platform);
@@ -154,15 +174,7 @@ const SocialAccountsOAuthView: React.FC = () => {
       setConnecting(platform);
       setError(null);
 
-      // For Instagram and Twitter, show credential form instead of OAuth
-      if (platform === 'instagram' || platform === 'twitter') {
-        setSelectedPlatform(platform);
-        setCredentialDialogOpen(true);
-        setConnecting(null);
-        return;
-      }
-
-      // For other platforms, use OAuth
+      // Use OAuth for all platforms
       const response = await apiClient.get<OAuthConnectResponse>(`/oauth/connect/${platform}`);
       if (response.data.auth_url) {
         window.location.href = response.data.auth_url;
@@ -426,38 +438,24 @@ const SocialAccountsOAuthView: React.FC = () => {
                           {platformDescriptions[platform]}
                         </Typography>
                         <Box sx={{ display: 'flex', gap: 1 }}>
-                          {platform === 'instagram' || platform === 'twitter' ? (
-                            <Button
-                              variant="contained"
-                              startIcon={<Login />}
-                              onClick={() => handleConnect(platform)}
-                              disabled={isConnecting}
-                              fullWidth
-                            >
-                              {isConnecting ? <CircularProgress size={20} /> : 'Enter Credentials'}
-                            </Button>
-                          ) : (
-                            <>
-                              <Button
-                                variant="contained"
-                                startIcon={<OpenInBrowser />}
-                                onClick={() => handleConnect(platform)}
-                                disabled={isConnecting}
-                                size="small"
-                              >
-                                {isConnecting ? <CircularProgress size={16} /> : 'OAuth'}
-                              </Button>
-                              <Button
-                                variant="outlined"
-                                startIcon={<OpenInBrowser />}
-                                onClick={() => handleBrowserConnect(platform)}
-                                disabled={isConnecting}
-                                size="small"
-                              >
-                                {isConnecting ? <CircularProgress size={16} /> : 'Browser'}
-                              </Button>
-                            </>
-                          )}
+                          <Button
+                            variant="contained"
+                            startIcon={<OpenInBrowser />}
+                            onClick={() => handleConnect(platform)}
+                            disabled={isConnecting}
+                            size="small"
+                          >
+                            {isConnecting ? <CircularProgress size={16} /> : 'OAuth'}
+                          </Button>
+                          <Button
+                            variant="outlined"
+                            startIcon={<OpenInBrowser />}
+                            onClick={() => handleBrowserConnect(platform)}
+                            disabled={isConnecting}
+                            size="small"
+                          >
+                            {isConnecting ? <CircularProgress size={16} /> : 'Browser'}
+                          </Button>
                         </Box>
                       </Box>
                     )}

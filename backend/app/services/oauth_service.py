@@ -27,13 +27,11 @@ class OAuthService:
     
     async def get_authorization_url(self, platform: str, user_id: str) -> Tuple[str, str]:
         """Generate OAuth authorization URL for a platform"""
-        # Handle Instagram through Facebook
-        actual_platform = platform
-        if platform == "instagram":
-            actual_platform = "facebook"
-        
-        if actual_platform not in PLATFORM_CONFIGS:
+        if platform not in PLATFORM_CONFIGS:
             raise ValueError(f"Unsupported platform: {platform}")
+        
+        # Determine actual platform for API calls (no longer needed for Instagram)
+        actual_platform = platform
         
         # Check if we're in test mode
         if os.getenv("TESTING", "false").lower() == "true":
@@ -46,26 +44,33 @@ class OAuthService:
         config = PLATFORM_CONFIGS[actual_platform]
         state = secrets.token_urlsafe(32)
         
+        # Generate code_verifier for Twitter PKCE
+        code_verifier = None
+        if platform == "twitter":
+            code_verifier = secrets.token_urlsafe(32)
+        
         # Store state for security verification
-        await self._store_oauth_state(state, user_id, platform)
+        await self._store_oauth_state(state, user_id, platform, code_verifier)
         
         client_id_map = {
             "facebook": oauth_settings.FACEBOOK_CLIENT_ID,
+            "instagram": oauth_settings.INSTAGRAM_CLIENT_ID,
             "reddit": oauth_settings.REDDIT_CLIENT_ID,
-            "google": oauth_settings.GOOGLE_CLIENT_ID,
+            "twitter": oauth_settings.TWITTER_CLIENT_ID,
         }
         
         redirect_uri_map = {
             "facebook": oauth_settings.FACEBOOK_REDIRECT_URI,
+            "instagram": oauth_settings.INSTAGRAM_REDIRECT_URI,
             "reddit": oauth_settings.REDDIT_REDIRECT_URI,
-            "google": oauth_settings.GOOGLE_REDIRECT_URI,
+            "twitter": oauth_settings.TWITTER_REDIRECT_URI,
         }
         
-        client_id = client_id_map.get(platform)
-        redirect_uri = redirect_uri_map.get(platform)
+        client_id = client_id_map.get(actual_platform)
+        redirect_uri = redirect_uri_map.get(actual_platform)
         
-        if not client_id or client_id == f"your_{platform}_client_id_here":
-            raise ValueError(f"Client ID not configured for {platform}. Please set {platform.upper()}_CLIENT_ID in your .env file")
+        if not client_id or client_id == f"your_{actual_platform}_client_id_here":
+            raise ValueError(f"Client ID not configured for {platform}. Please set {actual_platform.upper()}_CLIENT_ID in your .env file")
         
         if not redirect_uri:
             raise ValueError(f"Redirect URI not configured for {platform}")
@@ -81,14 +86,11 @@ class OAuthService:
         # Platform-specific parameters
         if platform == "reddit":
             params["duration"] = "permanent"
-        elif platform == "google":
-            params["access_type"] = "offline"
-            params["prompt"] = "consent"
+        elif platform == "twitter":
+            params["code_challenge_method"] = "S256"
+            params["code_challenge"] = self._generate_code_challenge(code_verifier)
         
         auth_url = f"{config['auth_url']}?{urlencode(params)}"
-        
-        # Store state for security verification
-        await self._store_oauth_state(state, user_id, platform)
         
         return auth_url, state
     
@@ -101,8 +103,8 @@ class OAuthService:
         
         user_id = stored_data["user_id"]
         
-        # Determine actual platform for API calls (Instagram routes through Facebook)
-        actual_platform = "facebook" if platform == "instagram" else platform
+        # Determine actual platform for API calls (no longer needed for Instagram)
+        actual_platform = platform
         
         try:
             # Check if this is a test code
@@ -126,7 +128,8 @@ class OAuthService:
                 }
             else:
                 # Exchange code for access token
-                token_data = await self._exchange_code_for_token(actual_platform, code)
+                code_verifier = stored_data.get("code_verifier") if platform == "twitter" else None
+                token_data = await self._exchange_code_for_token(actual_platform, code, code_verifier)
                 
                 # Get user profile
                 profile_data = await self._get_user_profile(actual_platform, token_data["access_token"])
@@ -158,26 +161,29 @@ class OAuthService:
             logger.error(f"OAuth callback failed for {platform}: {e}")
             raise Exception(f"Authentication failed: {str(e)}")
     
-    async def _exchange_code_for_token(self, platform: str, code: str) -> Dict:
+    async def _exchange_code_for_token(self, platform: str, code: str, code_verifier: Optional[str] = None) -> Dict:
         """Exchange authorization code for access token"""
         config = PLATFORM_CONFIGS[platform]
         
         client_secret_map = {
             "facebook": oauth_settings.FACEBOOK_CLIENT_SECRET,
+            "instagram": oauth_settings.INSTAGRAM_CLIENT_SECRET,
             "reddit": oauth_settings.REDDIT_CLIENT_SECRET,
-            "google": oauth_settings.GOOGLE_CLIENT_SECRET,
+            "twitter": oauth_settings.TWITTER_CLIENT_SECRET,
         }
         
         client_id_map = {
             "facebook": oauth_settings.FACEBOOK_CLIENT_ID,
+            "instagram": oauth_settings.INSTAGRAM_CLIENT_ID,
             "reddit": oauth_settings.REDDIT_CLIENT_ID,
-            "google": oauth_settings.GOOGLE_CLIENT_ID,
+            "twitter": oauth_settings.TWITTER_CLIENT_ID,
         }
         
         redirect_uri_map = {
             "facebook": oauth_settings.FACEBOOK_REDIRECT_URI,
+            "instagram": oauth_settings.INSTAGRAM_REDIRECT_URI,
             "reddit": oauth_settings.REDDIT_REDIRECT_URI,
-            "google": oauth_settings.GOOGLE_REDIRECT_URI,
+            "twitter": oauth_settings.TWITTER_REDIRECT_URI,
         }
         
         data = {
@@ -187,6 +193,10 @@ class OAuthService:
             "redirect_uri": redirect_uri_map[platform],
             "grant_type": "authorization_code"
         }
+        
+        # Add code_verifier for PKCE (Twitter)
+        if platform == "twitter" and code_verifier:
+            data["code_verifier"] = code_verifier
         
         # Platform-specific headers and authentication
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
@@ -236,10 +246,9 @@ class OAuthService:
         # Platform-specific profile endpoints
         profile_endpoints = {
             "facebook": "/me?fields=id,name,email,picture.width(200).height(200)",
-            "instagram": "/me?fields=id,name,email,picture.width(200).height(200)",  # Same as Facebook for now
+            "instagram": "/me?fields=id,username,name,account_type,media_count,followers_count,follows_count,biography,website,profile_picture_url",
             "reddit": "/api/v1/me",
-            "google": "/channels?part=snippet&mine=true",
-            "twitter": "/users/me?user.fields=id,username,name,profile_image_url,public_metrics"
+            "twitter": "/2/users/me?user.fields=id,username,name,profile_image_url,public_metrics,verified,description,location"
         }
         
         endpoint = profile_endpoints[platform]
@@ -269,11 +278,11 @@ class OAuthService:
             },
             "instagram": lambda d: {
                 "user_id": d["id"],
-                "username": d.get("name", ""),
-                "display_name": d.get("name"),
-                "email": d.get("email"),
+                "username": d.get("username", ""),
+                "display_name": d.get("name", ""),
+                "email": None,  # Instagram Basic Display API doesn't provide email
                 "profile_url": f"https://instagram.com/{d.get('username', d['id'])}",
-                "profile_picture": d.get("picture", {}).get("data", {}).get("url")
+                "profile_picture": d.get("profile_picture_url")
             },
             "reddit": lambda d: {
                 "user_id": d["id"],
@@ -308,9 +317,7 @@ class OAuthService:
     async def _save_social_account(self, user_id: str, platform: str, token_data: Dict, profile_data: Dict) -> SocialAccount:
         """Save social account to database"""
         # Map OAuth platform names to PlatformType enum values
-        platform_mapping = {
-            "google": "youtube"
-        }
+        platform_mapping = {}
         db_platform = platform_mapping.get(platform, platform.lower())
         
         # Calculate token expiration
@@ -403,9 +410,22 @@ class OAuthService:
         
         return {
             "user_id": oauth_state.user_id,
-            "platform": oauth_state.platform,
+            "platform": oauth_state.platform.value,
             "code_verifier": oauth_state.code_verifier
         }
+    
+    def _generate_code_challenge(self, code_verifier: str) -> str:
+        """Generate PKCE code challenge from code verifier"""
+        import hashlib
+        import base64
+        
+        # Create SHA256 hash of the code verifier
+        sha256 = hashlib.sha256(code_verifier.encode('utf-8')).digest()
+        
+        # Base64url encode the hash
+        code_challenge = base64.urlsafe_b64encode(sha256).decode('utf-8').rstrip('=')
+        
+        return code_challenge
     
     async def refresh_token(self, social_account: SocialAccount) -> bool:
         """Refresh access token for a social account"""
@@ -416,7 +436,7 @@ class OAuthService:
         config = PLATFORM_CONFIGS[platform]
         
         # Platform-specific refresh logic
-        if platform in ["facebook", "google"]:
+        if platform in ["facebook", "instagram"]:
             try:
                 response = await self.http_client.post(
                     config["token_url"],

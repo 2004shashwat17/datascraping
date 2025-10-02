@@ -10,6 +10,11 @@ class OAuthSettings(BaseSettings):
     FACEBOOK_CLIENT_SECRET: str = ""
     FACEBOOK_REDIRECT_URI: str = "http://localhost:8001/api/v1/oauth/facebook/callback"
     
+    # Instagram (Meta)
+    INSTAGRAM_CLIENT_ID: str = ""
+    INSTAGRAM_CLIENT_SECRET: str = ""
+    INSTAGRAM_REDIRECT_URI: str = "http://localhost:8001/api/v1/oauth/instagram/callback"
+    
     # Reddit
     REDDIT_CLIENT_ID: str = ""
     REDDIT_CLIENT_SECRET: str = ""
@@ -34,11 +39,23 @@ PLATFORM_CONFIGS = {
         "api_base": "https://graph.facebook.com/v18.0",
         "scopes": ["public_profile", "email", "pages_read_engagement", "pages_show_list", "instagram_basic", "instagram_content_publish", "pages_read_engagement"]
     },
+    "instagram": {
+        "auth_url": "https://api.instagram.com/oauth/authorize",
+        "token_url": "https://api.instagram.com/oauth/access_token",
+        "api_base": "https://graph.instagram.com",
+        "scopes": ["user_profile", "user_media"]
+    },
     "reddit": {
         "auth_url": "https://www.reddit.com/api/v1/authorize",
         "token_url": "https://www.reddit.com/api/v1/access_token",
         "api_base": "https://oauth.reddit.com",
         "scopes": ["identity", "read", "history", "subscribe", "privatemessages"]
+    },
+    "twitter": {
+        "auth_url": "https://twitter.com/i/oauth2/authorize",
+        "token_url": "https://api.twitter.com/2/oauth2/token",
+        "api_base": "https://api.twitter.com/2",
+        "scopes": ["tweet.read", "users.read", "follows.read", "like.read"]
     }
 }
 
@@ -54,16 +71,23 @@ PLATFORM_DATA_TYPES = {
         "instagram_media": "Instagram photos and videos",
         "instagram_insights": "Instagram account insights"
     },
+    "instagram": {
+        "posts": "User's Instagram posts and media",
+        "profile": "Profile information and bio",
+        "followers": "Follower count and basic info",
+        "following": "Following list"
+    },
     "reddit": {
         "posts": "Submitted posts and comments",
         "subscriptions": "Subscribed subreddits", 
         "saved": "Saved posts and comments",
         "history": "Comment and post history"
     },
-    "google": {
-        "videos": "YouTube videos and playlists",
-        "subscriptions": "Channel subscriptions",
-        "likes": "Liked videos",
-        "comments": "Video comments"
+    "twitter": {
+        "tweets": "User's tweets and replies",
+        "profile": "Profile information",
+        "followers": "Follower information",
+        "following": "Following list",
+        "likes": "Liked tweets"
     }
 }
